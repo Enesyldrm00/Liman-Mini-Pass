@@ -1,0 +1,11 @@
+{
+  "name": "liman",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Liman: a small self-hosted PaaS that builds and deploys on git push.",
+  "packageManager": "pnpm@12.19.0",
+  "engines": {
+    "node": ">=26 <27",
+    "pnpm": ">=12.19.0"
+  }
+}
