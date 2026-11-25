@@ -8,8 +8,9 @@ import {
 } from "@liman/shared";
 import { z } from "zod";
 
-// Variables the API reads (ROADMAP section 15). Each one joins this schema in the
-// subsection that starts using it, so a missing value always means a broken setup.
+// Variables the API needs (ROADMAP section 15). Connection settings for the local stack
+// are checked from the start; feature settings (GitHub App, encryption key, ...) join this
+// schema in the subsection that starts using them.
 const envSchema = z.object({
   NODE_ENV: nodeEnvSchema,
   LOG_LEVEL: logLevelSchema.default("info"),

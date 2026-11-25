@@ -20,8 +20,8 @@ export interface CreateDbOptions {
   onError?: (error: Error) => void;
 }
 
-// Fallback only; apps pass their pino logger via `onError`. Only the message is printed
-// because driver errors can carry connection details.
+// Fallback only; apps are expected to pass their pino logger via `onError`. Only the
+// message is printed because driver errors can carry connection details.
 const logPoolError = (error: Error): void => {
   console.error("db: idle connection error:", error.message);
 };
