@@ -1,3 +1,4 @@
+export * from "./auth.js";
 export * from "./config.js";
 export * from "./env.js";
 export * from "./errors.js";
