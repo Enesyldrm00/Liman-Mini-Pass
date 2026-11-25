@@ -11,6 +11,11 @@ export const REQUEST_ID_HEADER = "x-request-id";
  */
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
 
+/** Path without the query string. */
+function pathOf(url: string | undefined): string {
+  return (url ?? "").split("?", 1)[0] ?? "";
+}
+
 export function resolveRequestId(incoming: string | string[] | undefined): string {
   return typeof incoming === "string" && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
 }
@@ -31,7 +36,16 @@ export function requestLogger(logger: Logger): HttpLogger {
       if (res.statusCode >= 400) return "warn";
       return "info";
     },
+    // Query strings can carry one-time secrets (the OAuth `code` and `state` in 0.7), so
+    // only the path is logged.
+    serializers: {
+      req: (req: { url?: string; query?: unknown }) => ({
+        ...req,
+        url: pathOf(req.url),
+        query: undefined,
+      }),
+    },
     // The compose health check hits /healthz every few seconds.
-    autoLogging: { ignore: (req) => req.url === "/healthz" },
+    autoLogging: { ignore: (req) => pathOf(req.url) === "/healthz" },
   });
 }

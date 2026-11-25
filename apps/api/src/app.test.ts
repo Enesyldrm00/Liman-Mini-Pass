@@ -88,6 +88,19 @@ describe("request ids", () => {
 });
 
 describe("log redaction", () => {
+  it("logs the path without the query string", async () => {
+    const { app, lines } = setup();
+    await request(app).get("/api/auth/callback?code=secret-code&state=secret-state");
+    expect(JSON.stringify(lines)).not.toContain("secret");
+    expect(lines[0]).toMatchObject({ req: { url: "/api/auth/callback" } });
+  });
+
+  it("does not log health checks that carry a query string", async () => {
+    const { app, lines } = setup();
+    await request(app).get("/healthz?probe=1").expect(200);
+    expect(lines).toHaveLength(0);
+  });
+
   it("hides credentials, cookies and webhook signatures", async () => {
     const { app, lines } = setup();
     await request(app)
