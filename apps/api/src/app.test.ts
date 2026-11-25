@@ -1,12 +1,12 @@
 import request from "supertest";
 import { describe, expect, it } from "vitest";
-import { createApp } from "./app.js";
+import { createApp, type AppDeps } from "./app.js";
 import { createLogger } from "./logger.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 /** An app whose JSON log lines are collected in memory. */
-function setup() {
+function setup(registerRoutes?: AppDeps["registerRoutes"]) {
   const lines: Record<string, unknown>[] = [];
   const destination = {
     write(chunk: string) {
@@ -14,7 +14,7 @@ function setup() {
     },
   };
   const logger = createLogger({ logLevel: "info" }, destination);
-  return { app: createApp({ logger }), lines };
+  return { app: createApp({ logger, registerRoutes }), lines };
 }
 
 describe("api app", () => {
@@ -30,6 +30,25 @@ describe("api app", () => {
     const res = await request(app).get("/nope").expect(404);
     expect(res.body).toEqual({ error: { code: "not_found", message: "Not found" } });
     expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+});
+
+describe("error handler", () => {
+  it("turns a rejected async handler into the shared 500 shape and logs it", async () => {
+    const { app, lines } = setup((app) => {
+      app.get("/boom", async () => {
+        await Promise.resolve();
+        throw new Error("database password is hunter2");
+      });
+    });
+
+    const res = await request(app).get("/boom").expect(500);
+    expect(res.body).toEqual({ error: { code: "internal", message: "Internal server error" } });
+    expect(res.text).not.toContain("hunter2");
+
+    const reqId = res.headers["x-request-id"];
+    const errorLine = lines.find((line) => line.msg === "unhandled error");
+    expect(errorLine).toMatchObject({ level: 50, reqId, err: { type: "Error" } });
   });
 });
 

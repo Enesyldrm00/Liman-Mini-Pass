@@ -5,9 +5,11 @@ import { requestLogger } from "./middleware/request-logger.js";
 
 export interface AppDeps {
   logger: Logger;
+  /** Mounts feature routes before the 404 and error handlers. */
+  registerRoutes?: (app: Express) => void;
 }
 
-export function createApp({ logger }: AppDeps): Express {
+export function createApp({ logger, registerRoutes }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
   app.use(requestLogger(logger));
@@ -15,6 +17,8 @@ export function createApp({ logger }: AppDeps): Express {
   app.get("/healthz", (_req, res) => {
     res.json({ status: "ok" });
   });
+
+  registerRoutes?.(app);
 
   app.use((_req, res) => {
     const body: ApiError = { error: { code: "not_found", message: "Not found" } };
