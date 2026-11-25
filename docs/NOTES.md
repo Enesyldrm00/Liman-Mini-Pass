@@ -25,3 +25,13 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - Redaction yol tabanlı çalışıyor. Bilinmeyen bir alana (ör. `{ token }`) yazılan sır maskelenmez, o yüzden loga nesneyi bütün olarak değil, seçilmiş alanlarını koy.
   - Uygulanmış bir migration dosyası sonradan değişirse Drizzle onu yeni bir migration sanıyor ve eski volume'da `migrate` kırılıyor. 0.4'ten kalan bir volume'da bu oldu. Kural: bir migration uygulandıysa düzenlenmez, değişiklik yeni bir migration olarak eklenir.
   - Startup testleri `tsx` ile gerçek süreç başlatıyor; yavaş bir makinede 20 saniyelik zaman aşımına takılabilir.
+
+### 0.6 GitHub App
+
+- Geliştirme App'i `liman-dev-06` (`liman-dev` adı GitHub'da alınmıştı; App adları global). Yetkiler yalnızca Contents ve Metadata read, abone olunan tek olay `push`; `installation` ve `installation_repositories` her App'e zaten geliyor. Adımlar `docs/github-app-setup.md`'de. App manifest akışıyla oluşturuldu ve App JWT ile doğrulandı: `ping` ve `installation.created` smee'ye 200 ile ulaştı.
+- "Request user authorization during installation" bilinçli olarak kapalı. Açık olsaydı GitHub Setup URL'yi devre dışı bırakıp kullanıcıyı callback'e gönderirdi; 0.8'de gelen `installation_id`'yi doğrulamak için setup dönüşü gerekiyor.
+- smee istemcisi (forwarder) 1.2'ye ertelendi (seçenek A): hedef uç yokken her teslimat 404 alırdı. Bu alt bölümde yalnızca kanal açıldı ve App'e bağlandı. Kimlik bilgileri `.env` ve `secrets/app.pem`'de, ikisi de git-ignored.
+- **Kırılgan noktalar:**
+  - smee kanal sayfası gövdeyi imzasıyla birlikte gösteriyor. HMAC tekrar oynatmayı engellemez ve `X-GitHub-Delivery` imzanın kapsamında değil. Commit bazlı idempotency park alanına eklendi; 1.2'de karar verilecek.
+  - 0.8 açık sorusu: `installation_id` doğrulaması `GET /user/installations` ile yapılırsa user token gerekir (saklamıyoruz). Alternatif: App JWT ile `GET /app/installations/:id` ve `account.id` karşılaştırması. 0.8 başında karar, ADR-0002'ye yazılacak.
+  - Compose henüz `.env`'i ve `secrets/`'i servislere geçirmiyor; 0.7'de eklenecek. Kurulum şu an "All repositories" ile; en az yetki için "Only select repositories" daha doğru.
