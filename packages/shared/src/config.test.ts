@@ -17,9 +17,12 @@ describe("portSchema", () => {
     expect(portSchema.parse("3000")).toBe(3000);
   });
 
-  it.each(["0", "65536", "3000.5", "abc", "-1"])("rejects %s", (value) => {
-    expect(portSchema.safeParse(value).success).toBe(false);
-  });
+  it.each(["0", "65536", "3000.5", "abc", "-1", "0x1F90", "1e3", " 3000 "])(
+    "rejects %s",
+    (value) => {
+      expect(portSchema.safeParse(value).success).toBe(false);
+    },
+  );
 });
 
 describe("nodeEnvSchema and logLevelSchema", () => {

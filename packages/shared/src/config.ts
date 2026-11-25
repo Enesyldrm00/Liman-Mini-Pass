@@ -10,11 +10,12 @@ export const nodeEnvSchema = z.enum(NODE_ENVS);
 export const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 export const logLevelSchema = z.enum(LOG_LEVELS);
 
-export const portSchema = z.coerce
-  .number("Must be a number")
-  .int("Must be an integer")
-  .min(1, "Must be between 1 and 65535")
-  .max(65535, "Must be between 1 and 65535");
+/** Decimal digits only: `Number()` alone would also accept `0x1F90`, `1e3` or ` 3000 `. */
+export const portSchema = z
+  .string()
+  .regex(/^[0-9]{1,5}$/, "Must be a whole number")
+  .transform(Number)
+  .pipe(z.number().min(1, "Must be between 1 and 65535").max(65535, "Must be between 1 and 65535"));
 
 function parseUrl(value: string): URL | undefined {
   try {
