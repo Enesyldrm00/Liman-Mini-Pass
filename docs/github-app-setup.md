@@ -1,6 +1,6 @@
 # GitHub App setup (development)
 
-Liman talks to GitHub through a **GitHub App**, not an OAuth App: it signs users in with the App's user authorization, reads repositories with short-lived installation tokens and receives webhooks for the repositories the App is installed on. Development uses its own App, `liman-dev`, so nothing here touches a production App.
+Liman talks to GitHub through a **GitHub App**, not an OAuth App: it signs users in with the App's user authorization, reads repositories with short-lived installation tokens and receives webhooks for the repositories the App is installed on. Development uses its own App, `liman-dev-06`, so nothing here touches a production App.
 
 This guide creates the App, stores its credentials outside the repository and checks that GitHub can deliver webhooks. It takes about ten minutes.
 
@@ -8,7 +8,7 @@ This guide creates the App, stores its credentials outside the repository and ch
 
 | Setting         | Value                                             |
 | --------------- | ------------------------------------------------- |
-| App name        | `liman-dev` (must be unique on GitHub)            |
+| App name        | `liman-dev-06` (names are global on GitHub)       |
 | Homepage URL    | `https://github.com/Enesyldrm00/Liman-Mini-Pass`  |
 | Callback URL    | `http://liman.localhost/api/auth/github/callback` |
 | Setup URL       | `http://liman.localhost/api/github/setup`         |
@@ -35,7 +35,7 @@ Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHu
 
 **Basic information**
 
-- **GitHub App name:** `liman-dev`. If the name is taken, pick another one and use it as `GITHUB_APP_SLUG` later.
+- **GitHub App name:** `liman-dev-06`. App names are global on GitHub and `liman-dev` was already taken. If you set up another App and this name is taken too, pick another one and use it as `GITHUB_APP_SLUG`.
 - **Homepage URL:** `https://github.com/Enesyldrm00/Liman-Mini-Pass`
 
 **Identifying and authorizing users**
@@ -94,7 +94,7 @@ On the App's **General** page:
 
    ```sh
    mkdir -p secrets
-   mv ~/Downloads/liman-dev.*.private-key.pem secrets/app.pem
+   mv ~/Downloads/liman-dev-06.*.private-key.pem secrets/app.pem
    ```
 
 `secrets/`, `*.pem` and `.env` are git-ignored. Confirm before committing anything:
@@ -112,7 +112,7 @@ Copy `.env.example` to `.env` if you have not yet, then set:
 | Variable                      | Where it comes from                   |
 | ----------------------------- | ------------------------------------- |
 | `GITHUB_APP_ID`               | App ID (step 3)                       |
-| `GITHUB_APP_SLUG`             | The App name in its URL, `liman-dev`  |
+| `GITHUB_APP_SLUG`             | The App name in its URL, `liman-dev-06` |
 | `GITHUB_APP_CLIENT_ID`        | Client ID (step 3)                    |
 | `GITHUB_APP_CLIENT_SECRET`    | Client secret (step 3)                |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `./secrets/app.pem`                   |
@@ -141,7 +141,7 @@ If the ping is missing, check the Webhook URL and that **Active** is checked, th
 
 ## 6. Install the App
 
-1. Open **Install App** in the App settings (or `https://github.com/apps/liman-dev/installations/new`).
+1. Open **Install App** in the App settings (or `https://github.com/apps/liman-dev-06/installations/new`).
 2. Install it on your account, on **Only select repositories** with at least one repository you want to deploy, for example `liman-sample-app`.
 3. GitHub redirects to the Setup URL with `installation_id` and `setup_action=install` in the query string. Until 0.8 the API answers 404; that is expected.
 4. The smee.io channel shows an `installation` delivery with `action: created`.

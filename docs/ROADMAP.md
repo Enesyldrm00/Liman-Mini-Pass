@@ -496,7 +496,7 @@ Her alt bölüm bir dal ve bir PR'dır (Bölüm 16). Her fazın sonunda: ROADMAP
 - [ ] `.env.example` (Bölüm 15)
 
 **0.6 GitHub App**
-- [ ] Geliştirme için ayrı bir App (`liman-dev`)
+- [ ] Geliştirme için ayrı bir App (`liman-dev-06`; `liman-dev` adı GitHub'da alınmıştı)
 - [ ] Yetkiler: Contents (read), Metadata (read). Olaylar: `push`, `installation`, `installation_repositories`
 - [ ] Callback URL, Setup URL ve smee.io webhook URL'si
 - [ ] Kurulum adımları `docs/github-app-setup.md` dosyasında
@@ -899,7 +899,7 @@ Ayrı repo, basit bir Node HTTP sunucusu:
 | `LIMAN_ALLOWED_GITHUB_IDS` | 12345678 | Virgülle ayrılmış GitHub kullanıcı ID'leri |
 | `SESSION_TTL_HOURS` | 168 | |
 | `GITHUB_APP_ID` | | |
-| `GITHUB_APP_SLUG` | liman-dev | Kurulum linki için |
+| `GITHUB_APP_SLUG` | liman-dev-06 | Kurulum linki için |
 | `GITHUB_APP_CLIENT_ID` / `GITHUB_APP_CLIENT_SECRET` | | Kullanıcı girişi |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | ./secrets/app.pem | Repoya girmez |
 | `GITHUB_WEBHOOK_SECRET` | | |
