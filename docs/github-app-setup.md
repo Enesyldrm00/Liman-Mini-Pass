@@ -18,7 +18,7 @@ Production gets a separate App (phase 4) with `https://` URLs and its own key an
 | Private key     | `secrets/app.pem`                                 |
 | Who can install | Only this account                                 |
 
-The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. The endpoints themselves arrive in later steps: sign-in in 0.7, installation setup in 0.8, the webhook receiver in 1.2. Until then GitHub can redirect to them, but the API answers 404.
+The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. Sign-in (the callback) works since 0.7; the setup endpoint arrives in 0.8 and the webhook receiver in 1.2. Until then GitHub can redirect to those, but the API answers 404.
 
 ## 1. Create a smee.io channel
 
