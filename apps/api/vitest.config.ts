@@ -8,5 +8,8 @@ export default defineConfig({
     name: "@liman/api",
     include: ["src/**/*.test.ts"],
     passWithNoTests: true,
+    // Integration tests start Postgres and Redis containers; pulling images can take a while.
+    hookTimeout: 120_000,
+    testTimeout: 30_000,
   },
 });
