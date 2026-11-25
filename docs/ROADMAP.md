@@ -117,6 +117,7 @@ Ek — Yeni sohbet için bağlam
 - Build cache (katman önbelleği)
 - PR başına önizleme deployment'ı
 - Panelden subdomain değiştirme
+- Webhook tekrar koruması: delivery ID'ye ek olarak `(repo_id, after SHA)` üzerinden idempotency; aynı commit için ikinci push build'i açılmaz (`X-GitHub-Delivery` imzanın kapsamında değil, smee üzerinden tekrar oynatma riski — 0.6 güvenlik denetimi)
 
 **Bilinçli olarak kabul edilen sınırlamalar** (ADR'lerde yazılır):
 - Faz 1'de uygulamalar Docker ağı üzerinden birbirine erişebilir. Faz 2'de NetworkPolicy ile kapanır.
