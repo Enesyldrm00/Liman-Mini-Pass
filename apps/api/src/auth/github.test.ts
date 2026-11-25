@@ -29,13 +29,21 @@ function auth(fetchImpl: typeof fetch) {
 }
 
 describe("authorizeUrl", () => {
-  it("points at GitHub with client_id, redirect_uri and state", () => {
-    const url = new URL(auth(fetch).authorizeUrl({ state: "state-value", redirectUri: REDIRECT }));
+  it("points at GitHub with client_id, redirect_uri, state and an S256 PKCE challenge", () => {
+    const url = new URL(
+      auth(fetch).authorizeUrl({
+        state: "state-value",
+        codeChallenge: "challenge-value",
+        redirectUri: REDIRECT,
+      }),
+    );
     expect(url.origin + url.pathname).toBe("https://github.com/login/oauth/authorize");
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: "Iv23test",
       redirect_uri: REDIRECT,
       state: "state-value",
+      code_challenge: "challenge-value",
+      code_challenge_method: "S256",
     });
   });
 });
@@ -47,13 +55,18 @@ describe("fetchUser", () => {
       json({ id: 42, login: "octocat", avatar_url: "https://avatars/42" }),
     );
 
-    const user = await auth(impl).fetchUser({ code: "the-code", redirectUri: REDIRECT });
+    const user = await auth(impl).fetchUser({
+      code: "the-code",
+      codeVerifier: "verifier",
+      redirectUri: REDIRECT,
+    });
 
     expect(user).toEqual({ id: 42, login: "octocat", avatarUrl: "https://avatars/42" });
     expect(JSON.parse(calls[0]?.init?.body as string)).toEqual({
       client_id: "Iv23test",
       client_secret: "s3cret",
       code: "the-code",
+      code_verifier: "verifier",
       redirect_uri: REDIRECT,
     });
     expect(calls[1]?.url).toBe("https://api.github.com/user");
@@ -66,7 +79,7 @@ describe("fetchUser", () => {
       json({}),
     );
     const error = await auth(impl)
-      .fetchUser({ code: "old", redirectUri: REDIRECT })
+      .fetchUser({ code: "old", codeVerifier: "verifier", redirectUri: REDIRECT })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(GitHubAuthError);
     expect((error as GitHubAuthError).reason).toBe("bad_verification_code");
@@ -79,14 +92,18 @@ describe("fetchUser", () => {
     ["an error code that is not a plain identifier", json({ error: "<script>" }), "token_error"],
   ])("fails with a safe reason on %s from the token endpoint", async (_label, token, reason) => {
     const { impl } = fakeFetch(token, json({}));
-    await expect(auth(impl).fetchUser({ code: "c", redirectUri: REDIRECT })).rejects.toMatchObject({
+    await expect(
+      auth(impl).fetchUser({ code: "c", codeVerifier: "verifier", redirectUri: REDIRECT }),
+    ).rejects.toMatchObject({
       reason,
     });
   });
 
   it("fails when the user lookup does not return a valid user", async () => {
     const { impl } = fakeFetch(json({ access_token: "ghu_token" }), json({ login: "no-id" }));
-    await expect(auth(impl).fetchUser({ code: "c", redirectUri: REDIRECT })).rejects.toMatchObject({
+    await expect(
+      auth(impl).fetchUser({ code: "c", codeVerifier: "verifier", redirectUri: REDIRECT }),
+    ).rejects.toMatchObject({
       reason: "user_unexpected_response",
     });
   });
@@ -94,15 +111,31 @@ describe("fetchUser", () => {
   it("never puts the user token in the error", async () => {
     const { impl } = fakeFetch(json({ access_token: "ghu_secret_token" }), json({}, 401));
     const error = await auth(impl)
-      .fetchUser({ code: "c", redirectUri: REDIRECT })
+      .fetchUser({ code: "c", codeVerifier: "verifier", redirectUri: REDIRECT })
       .catch((e: unknown) => e);
     expect((error as Error).message).toBe("GitHub sign-in failed: user_http_401");
     expect(JSON.stringify(error)).not.toContain("ghu_secret_token");
   });
 
+  it.each([
+    ["a network error", new TypeError("fetch failed"), "token_network"],
+    ["a timeout", new DOMException("The operation timed out.", "TimeoutError"), "token_timeout"],
+  ])("turns %s into a GitHubAuthError", async (_label, failure, reason) => {
+    const failing: typeof fetch = () => Promise.reject(failure);
+    const error = await auth(failing)
+      .fetchUser({ code: "c", codeVerifier: "verifier", redirectUri: REDIRECT })
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(GitHubAuthError);
+    expect((error as GitHubAuthError).reason).toBe(reason);
+  });
+
   it("maps a missing avatar to null", async () => {
     const { impl } = fakeFetch(json({ access_token: "t" }), json({ id: 7, login: "x" }));
-    const user = await auth(impl).fetchUser({ code: "c", redirectUri: REDIRECT });
+    const user = await auth(impl).fetchUser({
+      code: "c",
+      codeVerifier: "verifier",
+      redirectUri: REDIRECT,
+    });
     expect(user.avatarUrl).toBeNull();
   });
 });

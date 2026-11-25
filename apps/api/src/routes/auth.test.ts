@@ -13,7 +13,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
 import { GitHubAuthError, type GitHubAuth, type GitHubUser } from "../auth/github.js";
 import { createSessionStore } from "../auth/sessions.js";
-import { hashToken } from "../auth/tokens.js";
+import { hashToken, pkceChallenge } from "../auth/tokens.js";
 import type { Config } from "../config/index.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
@@ -43,20 +43,38 @@ afterAll(async () => {
 });
 
 /** What the fake GitHub answers; reset before every test. */
-const gh: { user: GitHubUser; fail: boolean; calls: number } = {
+const gh: {
+  user: GitHubUser;
+  fail: boolean;
+  calls: number;
+  challenges: Set<string>;
+} = {
   user: { id: ALLOWED_ID, login: "enes", avatarUrl: null },
   fail: false,
   calls: 0,
+  challenges: new Set(),
 };
 
+/** Like GitHub, the fake only redeems a code with the verifier of a challenge it issued. */
 const fakeGitHub: GitHubAuth = {
-  authorizeUrl: ({ state, redirectUri }) =>
-    `https://github.test/authorize?${new URLSearchParams({ state, redirect_uri: redirectUri }).toString()}`,
-  fetchUser: () => {
+  authorizeUrl: ({ state, codeChallenge, redirectUri }) => {
+    gh.challenges.add(codeChallenge);
+    const params = new URLSearchParams({
+      state,
+      code_challenge: codeChallenge,
+      redirect_uri: redirectUri,
+    });
+    return `https://github.test/authorize?${params.toString()}`;
+  },
+  fetchUser: ({ codeVerifier }) => {
     gh.calls += 1;
-    return gh.fail
-      ? Promise.reject(new GitHubAuthError("bad_verification_code"))
-      : Promise.resolve(gh.user);
+    if (gh.fail) {
+      return Promise.reject(new GitHubAuthError("bad_verification_code"));
+    }
+    if (!gh.challenges.has(pkceChallenge(codeVerifier))) {
+      return Promise.reject(new GitHubAuthError("invalid_grant"));
+    }
+    return Promise.resolve(gh.user);
   },
 };
 
@@ -66,6 +84,7 @@ beforeEach(async () => {
   gh.user = { id: ALLOWED_ID, login: "enes", avatarUrl: null };
   gh.fail = false;
   gh.calls = 0;
+  gh.challenges.clear();
 });
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -105,31 +124,43 @@ function setCookies(res: request.Response): SetCookie[] {
   return list.map((header) => parseSetCookie(header));
 }
 
+/** The last Set-Cookie for a name: what the browser ends up with. */
 function cookieNamed(res: request.Response, name: string): SetCookie | undefined {
-  return setCookies(res).find((cookie) => cookie.name === name);
+  return setCookies(res).findLast((cookie) => cookie.name === name);
 }
 
-/** Starts sign-in and returns the state from the redirect, checking it matches the cookie. */
-async function startLogin(app: App): Promise<string> {
+interface Login {
+  state: string;
+  /** Value of the sign-in cookie: `<state>.<pkce verifier>`. */
+  cookie: string;
+  cookieName: string;
+}
+
+/** Starts sign-in, checking the redirect and the sign-in cookie agree. */
+async function startLogin(app: App, publicUrl = PUBLIC_URL, prefix = ""): Promise<Login> {
   const res = await request(app).get("/api/auth/github/login").expect(302);
   const location = new URL(String(res.headers.location));
   const state = location.searchParams.get("state") ?? "";
-  expect(location.searchParams.get("redirect_uri")).toBe(`${PUBLIC_URL}/api/auth/github/callback`);
-  expect(cookieNamed(res, "liman_oauth_state")?.value).toBe(state);
-  return state;
+  expect(location.searchParams.get("redirect_uri")).toBe(`${publicUrl}/api/auth/github/callback`);
+  const cookieName = `${prefix}liman_oauth_state`;
+  const cookie = cookieNamed(res, cookieName)?.value ?? "";
+  const [cookieState, verifier] = cookie.split(".");
+  expect(cookieState).toBe(state);
+  expect(location.searchParams.get("code_challenge")).toBe(pkceChallenge(verifier ?? ""));
+  return { state, cookie, cookieName };
 }
 
-function callback(app: App, state: string, cookieState = state, extraCookie = "") {
+function callback(app: App, login: Login, options: { cookie?: string; extra?: string } = {}) {
   return request(app)
     .get("/api/auth/github/callback")
-    .query({ code: "one-time-code", state })
-    .set("Cookie", `liman_oauth_state=${cookieState}${extraCookie}`);
+    .query({ code: "one-time-code", state: login.state })
+    .set("Cookie", `${login.cookieName}=${options.cookie ?? login.cookie}${options.extra ?? ""}`);
 }
 
 /** Full sign-in; returns the raw session token from the cookie. */
 async function signIn(app: App): Promise<string> {
-  const state = await startLogin(app);
-  const res = await callback(app, state).expect(302);
+  const login = await startLogin(app);
+  const res = await callback(app, login).expect(302);
   expect(res.headers.location).toBe(`${PUBLIC_URL}/`);
   const token = cookieNamed(res, "liman_session")?.value;
   expect(token).toBeTruthy();
@@ -158,8 +189,8 @@ describe("sign-in", () => {
 
   it("sets the session cookie httpOnly, SameSite=Lax, Path=/ and for the session lifetime", async () => {
     const app = makeApp(makeConfig({ sessionTtlHours: 2 }));
-    const state = await startLogin(app);
-    const res = await callback(app, state).expect(302);
+    const login = await startLogin(app);
+    const res = await callback(app, login).expect(302);
     const cookie = cookieNamed(res, "liman_session");
     expect(cookie).toMatchObject({ httpOnly: true, sameSite: "lax", path: "/", maxAge: 7200 });
     expect(cookie?.secure).toBeFalsy();
@@ -168,18 +199,40 @@ describe("sign-in", () => {
     expect(cookieNamed(res, "liman_oauth_state")?.value).toBe("");
   });
 
-  it("uses __Host- prefixed, Secure cookies in production", async () => {
-    const app = makeApp(makeConfig({ nodeEnv: "production" }));
-    const res = await request(app).get("/api/auth/github/login").expect(302);
-    const cookie = cookieNamed(res, "__Host-liman_oauth_state");
-    expect(cookie).toMatchObject({ secure: true, path: "/", httpOnly: true });
-    expect(cookie?.domain).toBeUndefined();
+  it("signs in with __Host- prefixed, Secure cookies in production", async () => {
+    const publicUrl = "https://liman.example.com";
+    const app = makeApp(makeConfig({ nodeEnv: "production", publicUrl }));
+    const login = await startLogin(app, publicUrl, "__Host-");
+    const res = await callback(app, login).expect(302);
+    expect(res.headers.location).toBe(`${publicUrl}/`);
+
+    for (const name of ["__Host-liman_oauth_state", "__Host-liman_session"]) {
+      const cookie = cookieNamed(res, name);
+      expect(cookie).toMatchObject({ secure: true, path: "/", httpOnly: true, sameSite: "lax" });
+      expect(cookie?.domain).toBeUndefined();
+    }
+    const token = cookieNamed(res, "__Host-liman_session")?.value ?? "";
+    await request(app).get("/api/me").set("Cookie", `__Host-liman_session=${token}`).expect(200);
+    // The unprefixed name, which a sibling subdomain could set, is not accepted.
+    await request(app).get("/api/me").set("Cookie", `liman_session=${token}`).expect(401);
+  });
+
+  it("rejects a code redeemed without the matching PKCE verifier", async () => {
+    const app = makeApp();
+    const login = await startLogin(app);
+    const res = await callback(app, login, {
+      cookie: `${login.state}.not-the-verifier`,
+    }).expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=github_failed`);
+    expect(await countSessions()).toBe(0);
   });
 
   it("rejects a callback whose state does not match the cookie", async () => {
     const app = makeApp();
-    const state = await startLogin(app);
-    const res = await callback(app, state, "some-other-state").expect(400);
+    const login = await startLogin(app);
+    const res = await callback(app, login, {
+      cookie: `some-other-state.${login.cookie.split(".")[1] ?? ""}`,
+    }).expect(400);
     expect(res.body).toEqual({
       error: { code: "validation_failed", message: "Invalid sign-in state" },
     });
@@ -200,8 +253,8 @@ describe("sign-in", () => {
   it("does not create a user for a GitHub ID that is not on the allow list", async () => {
     gh.user = { id: 999, login: "enes", avatarUrl: null }; // same login, other account
     const app = makeApp();
-    const state = await startLogin(app);
-    const res = await callback(app, state).expect(302);
+    const login = await startLogin(app);
+    const res = await callback(app, login).expect(302);
     expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=not_allowed`);
     expect(cookieNamed(res, "liman_session")).toBeUndefined();
     expect(await countUsers()).toBe(0);
@@ -211,9 +264,21 @@ describe("sign-in", () => {
   it("sends the browser back with an error when GitHub rejects the code", async () => {
     gh.fail = true;
     const app = makeApp();
-    const state = await startLogin(app);
-    const res = await callback(app, state).expect(302);
+    const login = await startLogin(app);
+    const res = await callback(app, login).expect(302);
     expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=github_failed`);
+    expect(await countSessions()).toBe(0);
+  });
+
+  it("ends the earlier session even when the new sign-in is rejected", async () => {
+    const app = makeApp();
+    const before = await signIn(app);
+    gh.user = { id: 999, login: "someone-else", avatarUrl: null };
+    const login = await startLogin(app);
+    const res = await callback(app, login, { extra: `; liman_session=${before}` }).expect(302);
+
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=not_allowed`);
+    expect(cookieNamed(res, "liman_session")?.value).toBe("");
     expect(await countSessions()).toBe(0);
   });
 
@@ -246,8 +311,8 @@ describe("sign-in", () => {
   it("drops the session the browser had before signing in (no session fixation)", async () => {
     const app = makeApp();
     const before = await signIn(app);
-    const state = await startLogin(app);
-    await callback(app, state, state, `; liman_session=${before}`).expect(302);
+    const login = await startLogin(app);
+    await callback(app, login, { extra: `; liman_session=${before}` }).expect(302);
 
     await request(app).get("/api/me").set("Cookie", `liman_session=${before}`).expect(401);
     expect(await countSessions()).toBe(1);
@@ -391,6 +456,63 @@ describe("sign-in rate limit", () => {
     expect(ttl).toBeGreaterThan(0);
     expect(ttl).toBeLessThanOrEqual(60);
     expect(await redis.get(keys[0] ?? "")).toBe("1");
+  });
+});
+
+describe("session store", () => {
+  /** A store whose clock the test moves. */
+  function storeAt(start: Date, ttlHours = 1) {
+    const clock = { now: start };
+    const store = createSessionStore(dbClient.db, { ttlHours, now: () => clock.now });
+    const advance = (ms: number) => {
+      clock.now = new Date(clock.now.getTime() + ms);
+    };
+    return { store, advance };
+  }
+
+  async function sessionRow() {
+    const [row] = await dbClient.db.select().from(sessions);
+    if (!row) throw new Error("no session row");
+    return row;
+  }
+
+  const MINUTE = 60 * 1000;
+
+  it("keeps a fixed lifetime: activity does not extend it", async () => {
+    const [user] = await dbClient.db
+      .insert(users)
+      .values({ githubId: ALLOWED_ID, login: "enes" })
+      .returning();
+    const { store, advance } = storeAt(new Date("2026-11-25T10:00:00Z"));
+    const { token, expiresAt } = await store.create(user?.id ?? "");
+    expect(expiresAt.toISOString()).toBe("2026-11-25T11:00:00.000Z");
+
+    for (let i = 0; i < 5; i += 1) {
+      advance(10 * MINUTE);
+      expect(await store.find(token)).not.toBeNull();
+    }
+    expect((await sessionRow()).expiresAt.toISOString()).toBe("2026-11-25T11:00:00.000Z");
+
+    advance(10 * MINUTE); // 11:00, the end of the lifetime
+    expect(await store.find(token)).toBeNull();
+    expect(await countSessions()).toBe(0);
+  });
+
+  it("writes last_seen_at at most every 5 minutes", async () => {
+    const [user] = await dbClient.db
+      .insert(users)
+      .values({ githubId: ALLOWED_ID, login: "enes" })
+      .returning();
+    const { store, advance } = storeAt(new Date("2026-11-25T10:00:00Z"));
+    const { token } = await store.create(user?.id ?? "");
+
+    advance(4 * MINUTE);
+    await store.find(token);
+    expect((await sessionRow()).lastSeenAt.toISOString()).toBe("2026-11-25T10:00:00.000Z");
+
+    advance(2 * MINUTE); // 10:06
+    await store.find(token);
+    expect((await sessionRow()).lastSeenAt.toISOString()).toBe("2026-11-25T10:06:00.000Z");
   });
 });
 

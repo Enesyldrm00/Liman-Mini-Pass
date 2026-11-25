@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashToken, newToken, safeEqual } from "./tokens.js";
+import { hashToken, newToken, pkceChallenge, safeEqual } from "./tokens.js";
 
 describe("newToken", () => {
   it("returns 32 random bytes as URL-safe base64", () => {
@@ -28,5 +28,13 @@ describe("safeEqual", () => {
   it("treats different lengths as unequal without throwing", () => {
     expect(safeEqual("short", "longer-value")).toBe(false);
     expect(safeEqual("", "x")).toBe(false);
+  });
+});
+
+describe("pkceChallenge", () => {
+  it("matches the RFC 7636 appendix B example", () => {
+    expect(pkceChallenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+      "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    );
   });
 });

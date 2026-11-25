@@ -19,3 +19,11 @@ export function safeEqual(a: string, b: string): boolean {
   const right = Buffer.from(b, "utf8");
   return left.length === right.length && timingSafeEqual(left, right);
 }
+
+/**
+ * PKCE S256 challenge for a verifier (RFC 7636): base64url(sha256(verifier)). A verifier
+ * from {@link newToken} is 43 URL-safe characters, the minimum length the RFC allows.
+ */
+export function pkceChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier, "ascii").digest("base64url");
+}

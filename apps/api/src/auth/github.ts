@@ -16,10 +16,17 @@ export interface GitHubUser {
 }
 
 export interface GitHubAuth {
-  /** Where to send the browser to start sign-in. */
-  authorizeUrl(params: { state: string; redirectUri: string }): string;
-  /** Exchanges the one-time `code` for a user token and returns who signed in. */
-  fetchUser(params: { code: string; redirectUri: string }): Promise<GitHubUser>;
+  /** Where to send the browser to start sign-in. `codeChallenge` is the PKCE S256 challenge. */
+  authorizeUrl(params: { state: string; codeChallenge: string; redirectUri: string }): string;
+  /**
+   * Exchanges the one-time `code` (with the PKCE verifier) for a user token and returns
+   * who signed in.
+   */
+  fetchUser(params: {
+    code: string;
+    codeVerifier: string;
+    redirectUri: string;
+  }): Promise<GitHubUser>;
 }
 
 /** Sign-in failed on GitHub's side or the answer was unusable. `reason` is safe to log. */
@@ -55,7 +62,17 @@ export interface GitHubAuthOptions {
 }
 
 export function createGitHubAuth(options: GitHubAuthOptions): GitHubAuth {
-  const doFetch = options.fetch ?? fetch;
+  const baseFetch = options.fetch ?? fetch;
+
+  /** Network failures and timeouts become `GitHubAuthError`, so callers handle one type. */
+  async function doFetch(what: string, url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await baseFetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    } catch (error) {
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
+      throw new GitHubAuthError(`${what}_${timedOut ? "timeout" : "network"}`);
+    }
+  }
 
   async function readJson(response: Response, what: string): Promise<unknown> {
     if (!response.ok) {
@@ -69,25 +86,27 @@ export function createGitHubAuth(options: GitHubAuthOptions): GitHubAuth {
   }
 
   return {
-    authorizeUrl({ state, redirectUri }) {
+    authorizeUrl({ state, codeChallenge, redirectUri }) {
       const url = new URL(AUTHORIZE_URL);
       url.searchParams.set("client_id", options.clientId);
       url.searchParams.set("redirect_uri", redirectUri);
       url.searchParams.set("state", state);
+      url.searchParams.set("code_challenge", codeChallenge);
+      url.searchParams.set("code_challenge_method", "S256");
       return url.toString();
     },
 
-    async fetchUser({ code, redirectUri }) {
-      const tokenResponse = await doFetch(TOKEN_URL, {
+    async fetchUser({ code, codeVerifier, redirectUri }) {
+      const tokenResponse = await doFetch("token", TOKEN_URL, {
         method: "POST",
         headers: { accept: "application/json", "content-type": "application/json" },
         body: JSON.stringify({
           client_id: options.clientId,
           client_secret: options.clientSecret,
           code,
+          code_verifier: codeVerifier,
           redirect_uri: redirectUri,
         }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       const token = tokenResponseSchema.safeParse(await readJson(tokenResponse, "token"));
       if (!token.success) {
@@ -98,14 +117,13 @@ export function createGitHubAuth(options: GitHubAuthOptions): GitHubAuth {
         throw new GitHubAuthError(SAFE_REASON.test(reason) ? reason : "token_error");
       }
 
-      const userResponse = await doFetch(USER_URL, {
+      const userResponse = await doFetch("user", USER_URL, {
         headers: {
           accept: "application/vnd.github+json",
           authorization: `Bearer ${token.data.access_token}`,
           "user-agent": "liman",
           "x-github-api-version": "2022-11-28",
         },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       const user = userResponseSchema.safeParse(await readJson(userResponse, "user"));
       if (!user.success) {
