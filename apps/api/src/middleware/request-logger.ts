@@ -44,6 +44,14 @@ export function requestLogger(logger: Logger): HttpLogger {
         url: pathOf(req.url),
         query: undefined,
       }),
+      // Redirects carry secrets in their query too: the sign-in redirect to GitHub holds the
+      // OAuth `state`. Only the target without its query is logged.
+      res: (res: { headers?: Record<string, unknown> }) => {
+        const location = res.headers?.location;
+        return typeof location === "string"
+          ? { ...res, headers: { ...res.headers, location: pathOf(location) } }
+          : res;
+      },
     },
     // The compose health check hits /healthz every few seconds.
     autoLogging: { ignore: (req) => pathOf(req.url) === "/healthz" },

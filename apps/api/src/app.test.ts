@@ -95,6 +95,19 @@ describe("log redaction", () => {
     expect(lines[0]).toMatchObject({ req: { url: "/api/auth/callback" } });
   });
 
+  it("logs redirect targets without their query string", async () => {
+    const { app, lines } = setup((app) => {
+      app.get("/go", (_req, res) => {
+        res.redirect(302, "https://github.com/login/oauth/authorize?state=secret-state");
+      });
+    });
+    await request(app).get("/go").expect(302);
+    expect(JSON.stringify(lines)).not.toContain("secret");
+    expect(lines[0]).toMatchObject({
+      res: { headers: { location: "https://github.com/login/oauth/authorize" } },
+    });
+  });
+
   it("does not log health checks that carry a query string", async () => {
     const { app, lines } = setup();
     await request(app).get("/healthz?probe=1").expect(200);
