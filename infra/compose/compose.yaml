@@ -78,7 +78,7 @@ services:
   migrate:
     <<: *dev-app
     restart: "no"
-    command: ["pnpm", "--filter", "@liman/api", "migrate"]
+    command: ["pnpm", "--filter", "@liman/db", "migrate"]
     depends_on:
       postgres:
         condition: service_healthy
