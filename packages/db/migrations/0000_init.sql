@@ -43,6 +43,7 @@ CREATE TABLE "builds" (
 	"started_at" timestamp with time zone,
 	"finished_at" timestamp with time zone,
 	"heartbeat_at" timestamp with time zone,
+	CONSTRAINT "builds_id_app_id_unique" UNIQUE("id","app_id"),
 	CONSTRAINT "builds_status_check" CHECK ("builds"."status" in ('queued', 'cloning', 'building', 'pushing', 'deploying', 'succeeded', 'failed', 'cancelled')),
 	CONSTRAINT "builds_trigger_check" CHECK ("builds"."trigger" in ('push', 'manual')),
 	CONSTRAINT "builds_image_ref_check" CHECK ("builds"."image_ref" is null or "builds"."image_ref" like '%@sha256:%'),
@@ -116,7 +117,7 @@ ALTER TABLE "apps" ADD CONSTRAINT "apps_installation_ref_github_installations_id
 ALTER TABLE "build_logs" ADD CONSTRAINT "build_logs_build_id_builds_id_fk" FOREIGN KEY ("build_id") REFERENCES "public"."builds"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "builds" ADD CONSTRAINT "builds_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "deployments" ADD CONSTRAINT "deployments_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "deployments" ADD CONSTRAINT "deployments_build_id_builds_id_fk" FOREIGN KEY ("build_id") REFERENCES "public"."builds"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "deployments" ADD CONSTRAINT "deployments_build_same_app_fk" FOREIGN KEY ("build_id","app_id") REFERENCES "public"."builds"("id","app_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "env_vars" ADD CONSTRAINT "env_vars_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "github_installations" ADD CONSTRAINT "github_installations_owner_id_users_id_fk" FOREIGN KEY ("owner_id") REFERENCES "public"."users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

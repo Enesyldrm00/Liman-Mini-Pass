@@ -26,11 +26,13 @@ import { sql, type SQL } from "drizzle-orm";
 import {
   bigint,
   check,
+  foreignKey,
   index,
   integer,
   pgTable,
   primaryKey,
   text,
+  unique,
   timestamp,
   uniqueIndex,
   uuid,
@@ -177,6 +179,8 @@ export const builds = pgTable(
     heartbeatAt: timestamptz("heartbeat_at"),
   },
   (t) => [
+    // Target of the composite foreign key from deployments (build must belong to the same app).
+    unique("builds_id_app_id_unique").on(t.id, t.appId),
     index("builds_app_id_queued_at_idx").on(t.appId, t.queuedAt.desc()),
     // Small index over in-progress builds only: superseding queued builds of an app,
     // the reaper and the reconciler read just these rows.
@@ -217,9 +221,7 @@ export const deployments = pgTable(
     appId: uuid("app_id")
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
-    buildId: uuid("build_id")
-      .notNull()
-      .references(() => builds.id, { onDelete: "cascade" }),
+    buildId: uuid("build_id").notNull(),
     kind: text("kind").$type<DeploymentKind>().notNull(),
     status: text("status").$type<DeploymentStatus>().notNull().default("pending"),
     imageRef: text("image_ref").notNull(),
@@ -228,6 +230,15 @@ export const deployments = pgTable(
     finishedAt: timestamptz("finished_at"),
   },
   (t) => [
+    // A deployment may only use a build of its own app, so a rollback bug cannot deploy
+    // another app's image. NO ACTION (not cascade): a build that is still deployed cannot be
+    // deleted on its own. NO ACTION is checked at the end of the statement, so deleting the
+    // app still works: its builds and deployments both go in the same cascade.
+    foreignKey({
+      name: "deployments_build_same_app_fk",
+      columns: [t.buildId, t.appId],
+      foreignColumns: [builds.id, builds.appId],
+    }).onDelete("no action"),
     // The database guarantees at most one active deployment per app (ROADMAP section 7).
     uniqueIndex("deployments_one_active_per_app")
       .on(t.appId)

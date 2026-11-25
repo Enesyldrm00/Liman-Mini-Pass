@@ -1,5 +1,5 @@
 {
-  "id": "24686501-0d2e-4a55-8a6b-2ff0689b17b9",
+  "id": "cb41f960-6f19-4c79-aca1-ef62430e7501",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -411,7 +411,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "builds_id_app_id_unique": {
+          "name": "builds_id_app_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "app_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "builds_status_check": {
@@ -548,17 +557,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "deployments_build_id_builds_id_fk": {
-          "name": "deployments_build_id_builds_id_fk",
+        "deployments_build_same_app_fk": {
+          "name": "deployments_build_same_app_fk",
           "tableFrom": "deployments",
           "tableTo": "builds",
           "columnsFrom": [
-            "build_id"
+            "build_id",
+            "app_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "app_id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
