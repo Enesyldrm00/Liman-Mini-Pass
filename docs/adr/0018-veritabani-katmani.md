@@ -24,6 +24,12 @@ Bunlara ek olarak bir paket ilk kez başka bir workspace paketini (`@liman/db` �
 - **Silme davranışı:**
   - Uygulamaya bağlı satırlar (env, build, log, deployment) ve oturumlar cascade ile silinir.
   - `owner_id` ve `installation_ref` RESTRICT'tir. Bir installation kaldırıldığında uygulamalara ne olacağına Faz 1.2'de (webhook senkronu) karar verilecek.
+  - `deployments` build'e bileşik bir FK ile bağlanır: `(build_id, app_id) → builds(id, app_id)`. Böylece bir deployment yalnızca kendi uygulamasının build'ini kullanabilir; rollback ucundaki bir hata başka uygulamanın imajını deploy edemez. Silme davranışı `NO ACTION`'dır: deploy edilmiş bir build tek başına silinemez. RESTRICT seçilmedi, çünkü RESTRICT anında kontrol edilir ve uygulama silinirken cascade sırasına göre hata verebilir. `NO ACTION` ise ifadenin sonunda kontrol edilir; o ana kadar uygulamanın deployment'ları da silinmiş olur.
+- **Biçim kısıtları (savunma katmanı, Bölüm 7 ve 13):** Kod yanlış bir şey yazsa bile veritabanı reddeder.
+  - `sessions.token_hash`: küçük harfli hex SHA-256 (`^[0-9a-f]{64}$`). Ham token yazılamaz.
+  - `env_vars.value_enc`: `v1:` önekiyle başlamalı. Düz metin yazılamaz. Anahtar rotasyonunda yeni önek bu kısıta eklenir.
+  - `builds.image_ref` ve `deployments.image_ref`: `@sha256:` içermeli. Etiketle deploy yapılamaz.
+- **Bağlantı hataları:** `createDb`, havuzun `error` olayını dinler. Boştaki bir bağlantı koparsa (Postgres yeniden başladığında) süreç çökmez; havuz o bağlantıyı atar ve bir sonraki sorguda yenisini açar. Yalnızca hata mesajı loglanır, 0.5'te pino'ya bağlanır.
 - **Kaynaktan çözümleme:** Workspace paketleri `exports` içinde `liman-source` adlı özel bir koşulla kaynak dosyalarını (`src/index.ts`) da gösterir. Bu koşulu kullananlar:
   - typecheck (`customConditions`),
   - Vitest (`resolve.conditions`),
@@ -49,4 +55,6 @@ Bunlara ek olarak bir paket ilk kez başka bir workspace paketini (`@liman/db` �
   3. Üretilen yeni migration CHECK kısıtını günceller.
 - `drizzle-kit generate`, `@liman/shared` paketini `dist/` üzerinden okur. Bu yüzden `generate` betiği önce shared'i derler.
 - `CHECK` ve index koşullarındaki değerler SQL'e literal olarak yazılır, çünkü bu yerlerde bind parametresi kullanılamaz. Bu yalnızca koddaki sabitler için güvenlidir; kullanıcı girdisi buraya asla gelmez.
+- Biçim kısıtları uygulamanın doğrulamasının yerini tutmaz, yalnızca son savunma hattıdır. Örneğin `v1:` önekli ama şifrelenmemiş bir değeri yakalayamaz.
+- Faz 1 için not: claim UPDATE'i `heartbeat_at = now()` set etmeli. Aksi hâlde ilk heartbeat'ten önce çöken bir build'in `heartbeat_at` değeri boş kalır ve reaper onu bulamaz.
 - Entegrasyon testleri Docker gerektirir. CI'da (0.10) GitHub Actions runner'ında Docker hazır gelir.
