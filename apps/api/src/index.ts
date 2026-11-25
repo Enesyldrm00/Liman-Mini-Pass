@@ -1,6 +1,7 @@
-import { createServer } from "node:http";
 import { EnvValidationError } from "@liman/shared";
+import { createApp } from "./app.js";
 import { loadConfig, type Config } from "./config/index.js";
+import { createLogger } from "./logger.js";
 
 function readConfig(): Config {
   try {
@@ -16,24 +17,19 @@ function readConfig(): Config {
 }
 
 const config = readConfig();
+const logger = createLogger(config);
+const app = createApp({ logger });
 
-const server = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/healthz") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
+const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
+  if (error) {
+    logger.fatal({ err: error }, "failed to start");
+    process.exit(1);
   }
-
-  res.writeHead(404, { "content-type": "application/json" });
-  res.end(JSON.stringify({ error: { code: "not_found", message: "Not found" } }));
-});
-
-server.listen(config.port, "0.0.0.0", () => {
-  console.log(`api listening on :${String(config.port)}`);
+  logger.info({ port: config.port, nodeEnv: config.nodeEnv }, "api listening");
 });
 
 function shutdown(signal: string): void {
-  console.log(`api received ${signal}, shutting down`);
+  logger.info({ signal }, "shutting down");
   server.close(() => process.exit(0));
 }
 
