@@ -22,7 +22,7 @@ A small self-hosted PaaS: push to GitHub, Liman builds the image, deploys it and
 
 ## Local stack
 
-Requires Docker. Starts Postgres, Redis, a registry, Traefik, api, worker and web:
+Requires Docker and a filled-in `.env` (copy `.env.example`; GitHub values from [`docs/github-app-setup.md`](docs/github-app-setup.md)). Without it the API refuses to start. Starts Postgres, Redis, a registry, Traefik, api, worker and web:
 
 ```sh
 pnpm stack:up      # build and start, wait until healthy

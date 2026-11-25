@@ -141,7 +141,7 @@ gh api user --jq .id
 curl -s https://api.github.com/users/<your-login> | grep '"id"'
 ```
 
-The API and worker read these variables once the code that needs them exists (0.7 and later). Nothing reads them yet. The local stack does not read `.env` yet either: passing these variables and the key file into the compose services comes with 0.7.
+The API reads the client ID and secret, the allow list and `SESSION_TTL_HOURS` at startup and refuses to start without them. In the local stack, compose passes `.env` to the api service; connection settings such as `DATABASE_URL` still come from `infra/compose/compose.yaml`. The App ID and the private key file are used from 0.8 on.
 
 ## 5. Check webhook delivery
 

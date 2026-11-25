@@ -86,6 +86,12 @@ services:
   api:
     <<: *dev-app
     command: ["pnpm", "--filter", "@liman/api", "dev"]
+    # GitHub App settings and the allow list come from the repository's .env
+    # (docs/github-app-setup.md). Values under `environment` win, so the connection
+    # settings below always point at the containers, not at the host ports in .env.
+    env_file:
+      - path: ../../.env
+        required: false
     environment:
       <<: *dev-env
       PORT: "3000"
