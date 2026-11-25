@@ -1,0 +1,24 @@
+# Traefik static configuration (local development).
+
+entryPoints:
+  web:
+    address: ":80"
+
+# Dashboard on the internal "traefik" entry point (:8080).
+# Compose publishes it only on 127.0.0.1.
+api:
+  dashboard: true
+  insecure: true
+
+providers:
+  # Liman's own services are discovered from container labels.
+  docker:
+    exposedByDefault: false
+    network: liman-internal
+  # User apps get one file each in this directory (Phase 1, ADR-0008).
+  file:
+    directory: /traefik/dynamic
+    watch: true
+
+log:
+  level: INFO
