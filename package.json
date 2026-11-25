@@ -26,6 +26,10 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "stack:up": "docker compose -f infra/compose/compose.yaml up -d --build --wait",
+    "stack:watch": "docker compose -f infra/compose/compose.yaml watch",
+    "stack:down": "docker compose -f infra/compose/compose.yaml down",
+    "stack:logs": "docker compose -f infra/compose/compose.yaml logs -f"
   }
 }

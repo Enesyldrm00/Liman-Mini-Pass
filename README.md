@@ -20,6 +20,24 @@ A small self-hosted PaaS: push to GitHub, Liman builds the image, deploys it and
 | `pnpm test`      | Run all Vitest projects               |
 | `pnpm format`    | Format the repo with Prettier         |
 
+## Local stack
+
+Requires Docker. Starts Postgres, Redis, a registry, Traefik, api, worker and web:
+
+```sh
+pnpm stack:up      # build and start, wait until healthy
+pnpm stack:watch   # same, plus live sync of source changes
+pnpm stack:down
+```
+
+| URL                                | What                           |
+| ---------------------------------- | ------------------------------ |
+| http://liman.localhost             | Panel                          |
+| http://liman.localhost/api         | API                            |
+| http://127.0.0.1:8080              | Traefik dashboard (local only) |
+| `localhost:5433`                   | Postgres (`liman` / `liman`)   |
+| `localhost:6379`, `localhost:5000` | Redis, registry                |
+
 ## Layout
 
 ```
