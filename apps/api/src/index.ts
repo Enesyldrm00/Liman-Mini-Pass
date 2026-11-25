@@ -1,27 +1,35 @@
-import { createServer } from "node:http";
+import { EnvValidationError } from "@liman/shared";
+import { createApp } from "./app.js";
+import { loadConfig, type Config } from "./config/index.js";
+import { createLogger } from "./logger.js";
 
-// Minimal placeholder until Express arrives (0.5 / 0.7): it only answers health checks
-// so the local stack can be wired up and verified.
-
-const port = Number(process.env.PORT ?? 3000);
-
-const server = createServer((req, res) => {
-  if (req.method === "GET" && req.url === "/healthz") {
-    res.writeHead(200, { "content-type": "application/json" });
-    res.end(JSON.stringify({ status: "ok" }));
-    return;
+function readConfig(): Config {
+  try {
+    return loadConfig();
+  } catch (error) {
+    if (error instanceof EnvValidationError) {
+      // No logger yet: the log level itself comes from the config.
+      process.stderr.write(`api: ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
   }
+}
 
-  res.writeHead(404, { "content-type": "application/json" });
-  res.end(JSON.stringify({ error: { code: "not_found", message: "Not found" } }));
-});
+const config = readConfig();
+const logger = createLogger(config);
+const app = createApp({ logger });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`api listening on :${String(port)}`);
+const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
+  if (error) {
+    logger.fatal({ err: error }, "failed to start");
+    process.exit(1);
+  }
+  logger.info({ port: config.port, nodeEnv: config.nodeEnv }, "api listening");
 });
 
 function shutdown(signal: string): void {
-  console.log(`api received ${signal}, shutting down`);
+  logger.info({ signal }, "shutting down");
   server.close(() => process.exit(0));
 }
 

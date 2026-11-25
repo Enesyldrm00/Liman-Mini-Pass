@@ -3,7 +3,10 @@
   "compilerOptions": {
     "composite": false,
     "declaration": false,
-    "noEmit": true
+    "noEmit": true,
+    // Resolve workspace packages to their TypeScript sources, so type-checking
+    // does not need a prior build. Builds (tsconfig.build.json) use dist/.
+    "customConditions": ["liman-source"]
   },
   "include": ["src", "vitest.config.ts"]
 }
