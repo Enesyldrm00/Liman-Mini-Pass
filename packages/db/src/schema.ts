@@ -39,13 +39,22 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
+const SAFE_LITERAL = /^[a-z_]+$/;
+
 /**
  * `column IN ('a', 'b', …)` with the values inlined as literals.
  * CHECK constraints and index predicates cannot take bind parameters, so the values are
  * written into the SQL. They only ever come from the constant lists above, never from input.
  */
 function inList(column: AnyPgColumn, values: readonly string[]): SQL {
-  const literals = values.map((value) => sql.raw(`'${value.replaceAll("'", "''")}'`));
+  const literals = values.map((value) => {
+    // Status constants are lower-case words; anything else means this helper is being
+    // misused (e.g. with input), so fail loudly instead of escaping and hoping.
+    if (!SAFE_LITERAL.test(value)) {
+      throw new Error(`inList: unexpected value ${JSON.stringify(value)}`);
+    }
+    return sql.raw(`'${value}'`);
+  });
   return sql`${column} in (${sql.join(literals, sql`, `)})`;
 }
 
