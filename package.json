@@ -1,0 +1,31 @@
+{
+  "name": "liman",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Liman: a small self-hosted PaaS that builds and deploys on git push.",
+  "packageManager": "pnpm@12.19.0",
+  "engines": {
+    "node": ">=26 <27",
+    "pnpm": ">=12.19.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.6.6",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.9.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  },
+  "scripts": {
+    "dev": "echo \"dev: no apps to run yet\"",
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  }
+}
