@@ -11,14 +11,14 @@ A small self-hosted PaaS: push to GitHub, Liman builds the image, deploys it and
 
 ## Commands
 
-| Command          | What it does                          |
-| ---------------- | ------------------------------------- |
-| `pnpm install`   | Install all workspace dependencies    |
-| `pnpm build`     | Build every package                   |
-| `pnpm lint`      | Run ESLint (typescript-eslint strict) |
-| `pnpm typecheck` | Type-check every package              |
-| `pnpm test`      | Run all Vitest projects               |
-| `pnpm format`    | Format the repo with Prettier         |
+| Command          | What it does                                              |
+| ---------------- | --------------------------------------------------------- |
+| `pnpm install`   | Install all workspace dependencies                        |
+| `pnpm build`     | Build every package                                       |
+| `pnpm lint`      | Run ESLint (typescript-eslint strict)                     |
+| `pnpm typecheck` | Type-check every package                                  |
+| `pnpm test`      | Run all Vitest projects (needs Docker for database tests) |
+| `pnpm format`    | Format the repo with Prettier                             |
 
 ## Local stack
 
@@ -45,4 +45,16 @@ apps/api        Express API (webhook, SSE)
 apps/worker     Build and deploy worker
 apps/web        React panel
 packages/shared Zod schemas, types, constants
+packages/db     Drizzle schema, migrations, database client
 ```
+
+## Database
+
+The schema lives in `packages/db/src/schema.ts`; SQL migrations are generated into `packages/db/migrations` and committed.
+
+```sh
+pnpm --filter @liman/db generate --name <change>   # write a new migration after editing the schema
+pnpm --filter @liman/db migrate                    # apply migrations (uses DATABASE_URL)
+```
+
+In the local stack the one-shot `migrate` service applies them before api and worker start.

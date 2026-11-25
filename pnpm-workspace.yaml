@@ -3,5 +3,10 @@ packages:
   - "packages/*"
 
 # esbuild (used by tsx and vite) runs a postinstall script to verify its native binary.
+# The others come with testcontainers; their scripts only build optional native add-ons
+# (SSH tunnelling, protobuf CLI) that the tests do not need.
 allowBuilds:
   esbuild: true
+  cpu-features: false
+  protobufjs: false
+  ssh2: false

@@ -245,7 +245,8 @@ liman/
 │   │   └── src/{pipeline,builders,deployers,logs,jobs,config}
 │   └── web/              # React panel
 ├── packages/
-│   └── shared/           # Zod şemaları, tipler, durum sabitleri, doğrulayıcılar
+│   ├── shared/           # Zod şemaları, tipler, durum sabitleri, doğrulayıcılar
+│   └── db/               # Drizzle şeması, migration'lar, bağlantı (api ve worker kullanır; ADR-0018)
 ├── infra/
 │   ├── compose/          # Yerel geliştirme (Faz 0–1)
 │   ├── traefik/          # Statik yapılandırma, dinamik dosyalar dizini (Faz 1)
@@ -976,6 +977,7 @@ ADR'ler Türkçe yazılır ve şu başlıkları içerir: Bağlam, Karar, Elenen 
 | 0015 | 3 | Gözlemlenebilirlik yığını ve bellek bütçesi |
 | 0016 | 4 | Wildcard TLS: DNS-01 |
 | 0017 | 4 | Yedekleme ve geri yükleme |
+| 0018 | 0 | Veritabanı katmanı: ayrı paket, text + CHECK, node-postgres |
 
 ---
 

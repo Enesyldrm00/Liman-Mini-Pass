@@ -1,0 +1,32 @@
+{
+  "name": "@liman/db",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "liman-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "generate": "pnpm --filter @liman/shared build && drizzle-kit generate",
+    "migrate": "tsx --conditions=liman-source src/migrate.ts"
+  },
+  "dependencies": {
+    "@liman/shared": "workspace:*",
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "12.2.2",
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11",
+    "tsx": "4.23.15"
+  }
+}
