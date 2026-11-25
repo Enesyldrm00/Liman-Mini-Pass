@@ -1,9 +1,21 @@
 import { createServer } from "node:http";
+import { EnvValidationError } from "@liman/shared";
+import { loadConfig, type Config } from "./config/index.js";
 
-// Minimal placeholder until Express arrives (0.5 / 0.7): it only answers health checks
-// so the local stack can be wired up and verified.
+function readConfig(): Config {
+  try {
+    return loadConfig();
+  } catch (error) {
+    if (error instanceof EnvValidationError) {
+      // No logger yet: the log level itself comes from the config.
+      process.stderr.write(`api: ${error.message}\n`);
+      process.exit(1);
+    }
+    throw error;
+  }
+}
 
-const port = Number(process.env.PORT ?? 3000);
+const config = readConfig();
 
 const server = createServer((req, res) => {
   if (req.method === "GET" && req.url === "/healthz") {
@@ -16,8 +28,8 @@ const server = createServer((req, res) => {
   res.end(JSON.stringify({ error: { code: "not_found", message: "Not found" } }));
 });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`api listening on :${String(port)}`);
+server.listen(config.port, "0.0.0.0", () => {
+  console.log(`api listening on :${String(config.port)}`);
 });
 
 function shutdown(signal: string): void {
