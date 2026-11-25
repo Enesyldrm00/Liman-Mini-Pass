@@ -31,5 +31,15 @@ Başlamadan önce docs/ROADMAP.md dosyasını oku (özellikle Bölüm 0, 16 ve s
 - Sırlar loglara yazılmaz. `.env`, anahtar dosyaları ve `secrets/` repoya girmez. `.env.example` her yeni değişkenle güncellenir (Bölüm 15).
 - Önemli her mimari karar için `docs/adr/NNNN-baslik.md` yaz (Bağlam, Karar, Elenen alternatifler, Sonuçlar). Planlanan ADR'ler Bölüm 17'de.
 
+## Araçlar (.claude/)
+Skill'ler yalnızca Enes çağırınca çalışır. Uygun anda Enes'e ilgili komutu öner.
+- Alt bölüm başı: `/alt-bolum-baslat <faz.no>`. Plan, issue ve dal hazırlanır; kod yazılmaz.
+- PR'dan önce: `@agent-liman-reviewer` ve `@agent-security-auditor` çalıştırılır. İkisi de salt okunur. `@agent-k8s-auditor` Faz 2'den itibaren kullanılır.
+- Alt bölüm sonu: `/alt-bolum-bitir`. Kontroller, NOTES taslağı, PR ve merge yapılır; kutucuk işaretlenmez.
+- Karar gerekince: `/adr <başlık>`.
+- Faz sonu: `/faz-kapat <faz>`. Kutucuklar, NOTES ve PR hazırlanır; etiket Enes'in onayıyla atılır.
+- Anlamak için: `/acikla <dosya|konu>`. Kod değiştirmez.
+- CI kurulana kadar (0.10): PR'da check yoksa lokal lint, typecheck, test ve format:check geçince merge edilir.
+
 ## İletişim
 - Enes'le samimi Türkçe konuş.
