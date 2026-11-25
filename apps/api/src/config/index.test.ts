@@ -68,6 +68,18 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, [name]: value })).toThrow(EnvValidationError);
   });
 
+  it("requires an https public URL in production", () => {
+    expect(() => loadConfig({ ...validEnv, NODE_ENV: "production" })).toThrow(
+      /LIMAN_PUBLIC_URL: Must be an https origin when NODE_ENV is production/,
+    );
+    const config = loadConfig({
+      ...validEnv,
+      NODE_ENV: "production",
+      LIMAN_PUBLIC_URL: "https://liman.example.com",
+    });
+    expect(config.publicUrl).toBe("https://liman.example.com");
+  });
+
   it("never puts received values in the error message", () => {
     const env = { ...validEnv, LIMAN_ALLOWED_GITHUB_IDS: "secret-looking-value" };
     expect(() => loadConfig(env)).toThrow(EnvValidationError);

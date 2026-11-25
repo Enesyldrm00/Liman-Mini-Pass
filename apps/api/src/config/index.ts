@@ -12,18 +12,31 @@ import { z } from "zod";
 
 // Variables the API needs (ROADMAP section 15). Settings join this schema in the
 // subsection that starts using them; the encryption key and App private key come later.
-const envSchema = z.object({
-  NODE_ENV: nodeEnvSchema,
-  LOG_LEVEL: logLevelSchema.default("info"),
-  PORT: portSchema.default(3000),
-  LIMAN_PUBLIC_URL: originSchema,
-  DATABASE_URL: urlSchema(["postgres:", "postgresql:"]),
-  REDIS_URL: urlSchema(["redis:", "rediss:"]),
-  LIMAN_ALLOWED_GITHUB_IDS: githubIdListSchema,
-  SESSION_TTL_HOURS: intSchema(1, 8760).default(168),
-  GITHUB_APP_CLIENT_ID: z.string(),
-  GITHUB_APP_CLIENT_SECRET: z.string(),
-});
+const envSchema = z
+  .object({
+    NODE_ENV: nodeEnvSchema,
+    LOG_LEVEL: logLevelSchema.default("info"),
+    PORT: portSchema.default(3000),
+    LIMAN_PUBLIC_URL: originSchema,
+    DATABASE_URL: urlSchema(["postgres:", "postgresql:"]),
+    REDIS_URL: urlSchema(["redis:", "rediss:"]),
+    LIMAN_ALLOWED_GITHUB_IDS: githubIdListSchema,
+    SESSION_TTL_HOURS: intSchema(1, 8760).default(168),
+    GITHUB_APP_CLIENT_ID: z.string(),
+    GITHUB_APP_CLIENT_SECRET: z.string(),
+  })
+  // Production cookies are Secure and `__Host-` prefixed, which only works over HTTPS.
+  // Over plain http sign-in would silently fail, and without the prefix an app on a
+  // sibling subdomain could plant a session cookie (ROADMAP section 13).
+  .superRefine((env, ctx) => {
+    if (env.NODE_ENV === "production" && !env.LIMAN_PUBLIC_URL.startsWith("https://")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["LIMAN_PUBLIC_URL"],
+        message: "Must be an https origin when NODE_ENV is production",
+      });
+    }
+  });
 
 export interface Config {
   readonly nodeEnv: z.infer<typeof nodeEnvSchema>;
