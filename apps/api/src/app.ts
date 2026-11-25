@@ -12,6 +12,10 @@ export interface AppDeps {
 export function createApp({ logger, registerRoutes }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
+  // Exactly one proxy (Traefik) sits in front of the API, so req.ip is the address Traefik
+  // saw. Trusting more hops would let clients pick their own IP via X-Forwarded-For and
+  // dodge the sign-in rate limit.
+  app.set("trust proxy", 1);
   app.use(requestLogger(logger));
 
   app.get("/healthz", (_req, res) => {
