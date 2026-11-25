@@ -3,6 +3,7 @@
  * and check that the constraints from ROADMAP section 7 are enforced by the database.
  */
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
+import { ACTIVE_BUILD_STATUSES, TERMINAL_BUILD_STATUSES } from "@liman/shared";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, type DbClient } from "./client.js";
@@ -55,6 +56,7 @@ async function pgErrorCode(query: PromiseLike<unknown>): Promise<string | undefi
 }
 
 const UNIQUE_VIOLATION = "23505";
+const FOREIGN_KEY_VIOLATION = "23503";
 // ON DELETE RESTRICT reports restrict_violation, not foreign_key_violation (23503).
 const RESTRICT_VIOLATION = "23001";
 const CHECK_VIOLATION = "23514";
@@ -104,6 +106,8 @@ async function seedBuild(appId: string) {
   if (!build) throw new Error("build not inserted");
   return build;
 }
+
+const DIGEST_REF = `localhost:5000/app@sha256:${"0".repeat(64)}`;
 
 function deployment(appId: string, buildId: string, status: "pending" | "active") {
   return {
@@ -279,10 +283,58 @@ describe("check constraints", () => {
     );
     expect(code).toBe(CHECK_VIOLATION);
 
+    expect(
+      await pgErrorCode(
+        client.db
+          .update(builds)
+          .set({ status: "failed", failedStage: "queued" as never })
+          .where(eq(builds.id, build.id)),
+      ),
+    ).toBe(CHECK_VIOLATION);
+
     await client.db
       .update(builds)
       .set({ status: "failed", failedStage: "building" })
       .where(eq(builds.id, build.id));
+  });
+
+  it("rejects a session token that is not a lower-case hex SHA-256", async () => {
+    const { user } = await seedApp();
+    for (const tokenHash of ["raw-session-token", "A".repeat(64), "a".repeat(63)]) {
+      expect(
+        await pgErrorCode(
+          client.db.insert(sessions).values({ userId: user.id, tokenHash, expiresAt: new Date() }),
+        ),
+      ).toBe(CHECK_VIOLATION);
+    }
+  });
+
+  it("rejects an env value without the encryption version prefix", async () => {
+    const { app } = await seedApp();
+    expect(
+      await pgErrorCode(
+        client.db.insert(envVars).values({ appId: app.id, key: "SECRET", valueEnc: "plaintext" }),
+      ),
+    ).toBe(CHECK_VIOLATION);
+  });
+
+  it("rejects image references without a digest", async () => {
+    const { app } = await seedApp();
+    const build = await seedBuild(app.id);
+    const tagRef = "localhost:5000/app:latest";
+
+    expect(
+      await pgErrorCode(
+        client.db.update(builds).set({ imageRef: tagRef }).where(eq(builds.id, build.id)),
+      ),
+    ).toBe(CHECK_VIOLATION);
+    expect(
+      await pgErrorCode(
+        client.db
+          .insert(deployments)
+          .values({ ...deployment(app.id, build.id, "pending"), imageRef: tagRef }),
+      ),
+    ).toBe(CHECK_VIOLATION);
   });
 
   it("rejects unknown deployment, app and log stream values", async () => {
@@ -297,7 +349,7 @@ describe("check constraints", () => {
     expect(
       await pgErrorCode(
         client.db.execute(
-          sql`insert into deployments (app_id, build_id, kind, image_ref) values (${app.id}, ${build.id}, 'hotfix', 'x')`,
+          sql`insert into deployments (app_id, build_id, kind, image_ref) values (${app.id}, ${build.id}, 'hotfix', ${DIGEST_REF})`,
         ),
       ),
     ).toBe(CHECK_VIOLATION);
@@ -358,5 +410,91 @@ describe("deletes", () => {
     expect(await pgErrorCode(client.db.delete(users).where(eq(users.id, user.id)))).toBe(
       RESTRICT_VIOLATION,
     );
+  });
+});
+
+describe("deployments and builds", () => {
+  it("rejects a deployment that points at another app's build", async () => {
+    const a = await seedApp();
+    const b = await seedApp();
+    const buildOfB = await seedBuild(b.app.id);
+
+    const code = await pgErrorCode(
+      client.db.insert(deployments).values(deployment(a.app.id, buildOfB.id, "pending")),
+    );
+    expect(code).toBe(FOREIGN_KEY_VIOLATION);
+  });
+
+  it("refuses to delete a build that still has deployments", async () => {
+    const { app } = await seedApp();
+    const build = await seedBuild(app.id);
+    await client.db.insert(deployments).values(deployment(app.id, build.id, "active"));
+
+    const code = await pgErrorCode(client.db.delete(builds).where(eq(builds.id, build.id)));
+    expect(code).toBe(FOREIGN_KEY_VIOLATION);
+  });
+});
+
+describe("concurrency", () => {
+  it("lets only one of two concurrent transactions activate a deployment", async () => {
+    const { app } = await seedApp();
+    const build = await seedBuild(app.id);
+    const insertActive = {
+      text: "insert into deployments (app_id, build_id, kind, status, image_ref) values ($1, $2, 'build', 'active', $3)",
+      values: [app.id, build.id, DIGEST_REF],
+    };
+
+    const first = await client.pool.connect();
+    const second = await client.pool.connect();
+    try {
+      await first.query("begin");
+      await second.query("begin");
+      await first.query(insertActive);
+
+      // The second insert waits on the first transaction's uncommitted index entry…
+      const pending = second.query(insertActive).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await first.query("commit");
+
+      // …and fails once the first one commits.
+      const error = await pending;
+      expect(error).toMatchObject({ code: UNIQUE_VIOLATION });
+      await second.query("rollback");
+    } finally {
+      first.release();
+      second.release();
+    }
+
+    const active = await client.db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.status, "active"));
+    expect(active).toHaveLength(1);
+  });
+});
+
+describe("partial indexes", () => {
+  async function indexDef(name: string): Promise<string> {
+    const result = await client.pool.query<{ indexdef: string }>(
+      "select indexdef from pg_indexes where indexname = $1",
+      [name],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error(`index ${name} not found`);
+    return row.indexdef;
+  }
+
+  it("indexes only in-progress builds", async () => {
+    const def = await indexDef("builds_active_idx");
+    for (const status of ACTIVE_BUILD_STATUSES) expect(def).toContain(`'${status}'`);
+    for (const status of TERMINAL_BUILD_STATUSES) expect(def).not.toContain(`'${status}'`);
+  });
+
+  it("makes deployments unique per app only while active", async () => {
+    const def = await indexDef("deployments_one_active_per_app");
+    expect(def).toMatch(/^CREATE UNIQUE INDEX/);
+    expect(def).toContain("WHERE (status = 'active'::text)");
   });
 });
