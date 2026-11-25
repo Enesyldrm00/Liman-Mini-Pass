@@ -6,6 +6,7 @@ import {
   githubIdListSchema,
   logLevelSchema,
   nodeEnvSchema,
+  intSchema,
   originSchema,
   parseEnv,
   portSchema,
@@ -23,6 +24,20 @@ describe("portSchema", () => {
       expect(portSchema.safeParse(value).success).toBe(false);
     },
   );
+});
+
+describe("intSchema", () => {
+  const hours = intSchema(1, 8760);
+
+  it("coerces whole numbers within the range", () => {
+    expect(hours.parse("1")).toBe(1);
+    expect(hours.parse("168")).toBe(168);
+    expect(hours.parse("8760")).toBe(8760);
+  });
+
+  it.each(["0", "8761", "1.5", "abc", "-1", "0x10", "1e2", " 168 "])("rejects %s", (value) => {
+    expect(hours.safeParse(value).success).toBe(false);
+  });
 });
 
 describe("nodeEnvSchema and logLevelSchema", () => {
