@@ -890,6 +890,7 @@ Ayrı repo, basit bir Node HTTP sunucusu:
 |---|---|---|
 | `NODE_ENV` | development | |
 | `LOG_LEVEL` | info | |
+| `PORT` | 3000 | API dinleme portu |
 | `LIMAN_PUBLIC_URL` | http://liman.localhost | Origin kontrolü ve yönlendirmeler |
 | `LIMAN_BASE_DOMAIN` | localhost | Uygulama adresleri `<sub>.<bu>` olur |
 | `DATABASE_URL` | postgres://… | |
