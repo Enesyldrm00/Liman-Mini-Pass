@@ -1,11 +1,11 @@
 import { createDb } from "@liman/db";
 import { EnvValidationError } from "@liman/shared";
-import { Redis } from "ioredis";
 import { createApp } from "./app.js";
 import { createGitHubAuth } from "./auth/github.js";
 import { createSessionStore } from "./auth/sessions.js";
 import { loadConfig, type Config } from "./config/index.js";
 import { createLogger } from "./logger.js";
+import { createRedis } from "./redis.js";
 import { apiRoutes } from "./routes/index.js";
 
 function readConfig(): Config {
@@ -30,7 +30,7 @@ const dbClient = createDb(config.databaseUrl, {
     logger.error({ errorMessage: error.message }, "database idle connection error");
   },
 });
-const redis = new Redis(config.redisUrl);
+const redis = createRedis(config.redisUrl);
 redis.on("error", (error: Error) => {
   logger.error({ errorMessage: error.message }, "redis connection error");
 });
