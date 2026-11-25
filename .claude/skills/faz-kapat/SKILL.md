@@ -34,6 +34,7 @@ Sürümler: Faz 0 → `v0.1.0`, Faz 1 → `v0.2.0`, Faz 2 → `v0.3.0`, Faz 3 �
   - kontrol sorularının kısa cevapları
 
   Derlenen taslakları kaldır.
+
 - PR aç ve merge et (`/alt-bolum-bitir`'deki 4. ve 5. adımlarla aynı kural).
 
 ## 3. Etiket ve release (onay şart)

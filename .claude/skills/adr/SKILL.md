@@ -28,15 +28,19 @@ Kararın dayanağını konuşmadan, koddan ve ROADMAP'ten al. Uydurma; bilinmeye
 - Faz: <N>
 
 ## Bağlam
+
 Hangi problem, hangi kısıtlar.
 
 ## Karar
+
 Ne seçtik, kısa ve net.
 
 ## Elenen alternatifler
+
 - **<Alternatif>:** neden elendi.
 
 ## Sonuçlar
+
 Kazanımlar, bedeller, kabul edilen riskler, ileride neyi değiştirebilir.
 ```
 
