@@ -2,6 +2,7 @@ import type { ApiError } from "@liman/shared";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { Logger } from "pino";
 import { requestLogger } from "./middleware/request-logger.js";
+import { safeError } from "./safe-error.js";
 
 export interface AppDeps {
   logger: Logger;
@@ -35,7 +36,7 @@ export function createApp({ logger, registerRoutes }: AppDeps): Express {
       next(error);
       return;
     }
-    req.log.error({ err: error }, "unhandled error");
+    req.log.error({ err: safeError(error) }, "unhandled error");
     const body: ApiError = { error: { code: "internal", message: "Internal server error" } };
     res.status(500).json(body);
   };

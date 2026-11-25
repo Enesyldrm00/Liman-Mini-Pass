@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp, type AppDeps } from "./app.js";
@@ -49,6 +50,45 @@ describe("error handler", () => {
     const reqId = res.headers["x-request-id"];
     const errorLine = lines.find((line) => line.msg === "unhandled error");
     expect(errorLine).toMatchObject({ level: 50, reqId, err: { type: "Error" } });
+  });
+});
+
+describe("error handler with database errors", () => {
+  it("logs a failed query without its SQL parameters or the values Postgres echoes", async () => {
+    const pgError = Object.assign(new Error("duplicate key value: Key (github_id)=(4242) exists"), {
+      name: "DatabaseError",
+      code: "23505",
+      constraint: "users_github_id_unique",
+      table: "users",
+      detail: "Key (github_id)=(4242) already exists.",
+    });
+    const { app, lines } = setup((app) => {
+      app.get("/db-boom", () => {
+        throw new DrizzleQueryError(
+          "select * from sessions where token_hash = $1",
+          ["secret-token-hash"],
+          pgError,
+        );
+      });
+    });
+
+    await request(app).get("/db-boom").expect(500);
+    const raw = JSON.stringify(lines);
+    expect(raw).not.toContain("secret-token-hash");
+    expect(raw).not.toContain("4242");
+    expect(raw).not.toContain("token_hash = $1");
+    const errorLine = lines.find((line) => line.msg === "unhandled error");
+    expect(errorLine).toMatchObject({
+      err: {
+        type: "DrizzleQueryError",
+        cause: {
+          type: "DatabaseError",
+          code: "23505",
+          constraint: "users_github_id_unique",
+          table: "users",
+        },
+      },
+    });
   });
 });
 
