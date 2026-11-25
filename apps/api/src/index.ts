@@ -1,7 +1,12 @@
+import { createDb } from "@liman/db";
 import { EnvValidationError } from "@liman/shared";
 import { createApp } from "./app.js";
+import { createGitHubAuth } from "./auth/github.js";
+import { createSessionStore } from "./auth/sessions.js";
 import { loadConfig, type Config } from "./config/index.js";
 import { createLogger } from "./logger.js";
+import { createRedis } from "./redis.js";
+import { apiRoutes } from "./routes/index.js";
 
 function readConfig(): Config {
   try {
@@ -18,7 +23,28 @@ function readConfig(): Config {
 
 const config = readConfig();
 const logger = createLogger(config);
-const app = createApp({ logger });
+
+// Driver errors can carry connection details, so only the message is logged.
+const dbClient = createDb(config.databaseUrl, {
+  onError: (error) => {
+    logger.error({ errorMessage: error.message }, "database idle connection error");
+  },
+});
+const redis = createRedis(config.redisUrl);
+redis.on("error", (error: Error) => {
+  logger.error({ errorMessage: error.message }, "redis connection error");
+});
+
+const app = createApp({
+  logger,
+  registerRoutes: apiRoutes({
+    config,
+    db: dbClient.db,
+    redis,
+    github: createGitHubAuth(config.github),
+    sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
+  }),
+});
 
 const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
   if (error) {
@@ -30,7 +56,9 @@ const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
 
 function shutdown(signal: string): void {
   logger.info({ signal }, "shutting down");
-  server.close(() => process.exit(0));
+  server.close(() => {
+    void Promise.allSettled([dbClient.close(), redis.quit()]).then(() => process.exit(0));
+  });
 }
 
 process.on("SIGTERM", () => {

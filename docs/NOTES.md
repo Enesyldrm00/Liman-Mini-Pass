@@ -35,3 +35,15 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - smee kanal sayfası gövdeyi imzasıyla birlikte gösteriyor. HMAC tekrar oynatmayı engellemez ve `X-GitHub-Delivery` imzanın kapsamında değil. Commit bazlı idempotency park alanına eklendi; 1.2'de karar verilecek.
   - 0.8 açık sorusu: `installation_id` doğrulaması `GET /user/installations` ile yapılırsa user token gerekir (saklamıyoruz). Alternatif: App JWT ile `GET /app/installations/:id` ve `account.id` karşılaştırması. 0.8 başında karar, ADR-0002'ye yazılacak.
   - Compose henüz `.env`'i ve `secrets/`'i servislere geçirmiyor; 0.7'de eklenecek. Kurulum şu an "All repositories" ile; en az yetki için "Only select repositories" daha doğru.
+
+### 0.7 Kimlik
+
+- Giriş GitHub App kullanıcı yetkilendirmesiyle (web akışı + PKCE S256) yapılıyor. `state` ve PKCE verifier tek bir httpOnly çerezde (`<state>.<verifier>`, 10 dk) taşınıyor; callback önce `state`'i sabit zamanlı karşılaştırıyor, tutmazsa 400 ve GitHub'a hiç gidilmiyor. Kullanıcı token'ı tek bir `GET /user` çağrısında kullanılıp atılıyor. İzin listesi numerik GitHub ID ile; listede olmayan biri için `users` satırı bile açılmıyor, listeden çıkarılanın açık oturumu bir sonraki istekte düşüyor.
+- Oturum: 32 bayt rastgele token, DB'de yalnızca SHA-256 hex; süre sabit (`SESSION_TTL_HOURS`), kullanım uzatmıyor. Çerez httpOnly + SameSite=Lax + `Path=/`; üretimde Secure ve `__Host-` önekli (bu yüzden üretimde `LIMAN_PUBLIC_URL` https zorunlu). Kardeş subdomain aynı site sayıldığı için `/api` altındaki her yazma isteğinde `Origin` panelin origin'iyle birebir eşleşmeli, yoksa 403 (ADR-0003).
+- Hız sınırı Redis'te (sabit pencere, `SET NX EX` + `INCR` tek MULTI, IP başına dakikada 10; IPv6 /64'e göre). Redis yoksa istek hızlıca 500 alıyor, sınır atlanmıyor. `trust proxy = 1`: önde tek vekil Traefik var, istemci `X-Forwarded-For` ile kendi IP'sini seçemiyor.
+- Gerçek GitHub ile compose stack'inde uçtan uca denendi. Denerken bir sızıntı yakalandı: pino-http cevap başlıklarını logluyor ve GitHub'a yönlendiren `Location`'da `state` vardı. Ayrıca güvenlik denetimi Drizzle hatalarının SQL parametrelerini loga yazdığını buldu; artık yalnızca Postgres hata kodu ve kısıt adı yazılıyor.
+- **Kırılgan noktalar:**
+  - Stack artık dolu bir `.env` olmadan kalkmıyor (compose `env_file`; bağlantı ayarları yine compose'dan gelir).
+  - `trust proxy` vekil sayısına bağlı; API host'ta önünde Traefik olmadan çalışırken hız sınırı `X-Forwarded-For` ile atlatılabilir. Faz 2'de k3s'te hop sayısı yeniden kontrol edilmeli.
+  - Yeni bir loglama yolu eklerken: istek/cevap URL'lerinde sorgu dizesi, hata nesnelerinde DB parametreleri sır taşıyabilir. Nesneyi değil seçilmiş alanları logla.
+  - 0.8 açık soruları: kullanıcı token'ı girişte installation senkronu için kullanılacak, ardından iptal edilecek; `installation_id` doğrulaması user token mı App JWT mi olacak, karar ADR-0002'ye.

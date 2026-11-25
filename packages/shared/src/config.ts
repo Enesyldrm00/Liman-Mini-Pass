@@ -17,6 +17,16 @@ export const portSchema = z
   .transform(Number)
   .pipe(z.number().min(1, "Must be between 1 and 65535").max(65535, "Must be between 1 and 65535"));
 
+/** A whole number in `[min, max]`, written with decimal digits only (e.g. `SESSION_TTL_HOURS`). */
+export function intSchema(min: number, max: number) {
+  const range = `Must be between ${String(min)} and ${String(max)}`;
+  return z
+    .string()
+    .regex(/^[0-9]{1,15}$/, "Must be a whole number")
+    .transform(Number)
+    .pipe(z.number().min(min, range).max(max, range));
+}
+
 function parseUrl(value: string): URL | undefined {
   try {
     return new URL(value);

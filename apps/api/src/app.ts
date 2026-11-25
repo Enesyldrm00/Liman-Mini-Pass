@@ -2,6 +2,7 @@ import type { ApiError } from "@liman/shared";
 import express, { type ErrorRequestHandler, type Express } from "express";
 import type { Logger } from "pino";
 import { requestLogger } from "./middleware/request-logger.js";
+import { safeError } from "./safe-error.js";
 
 export interface AppDeps {
   logger: Logger;
@@ -12,6 +13,10 @@ export interface AppDeps {
 export function createApp({ logger, registerRoutes }: AppDeps): Express {
   const app = express();
   app.disable("x-powered-by");
+  // Exactly one proxy (Traefik) sits in front of the API, so req.ip is the address Traefik
+  // saw. Trusting more hops would let clients pick their own IP via X-Forwarded-For and
+  // dodge the sign-in rate limit.
+  app.set("trust proxy", 1);
   app.use(requestLogger(logger));
 
   app.get("/healthz", (_req, res) => {
@@ -31,7 +36,7 @@ export function createApp({ logger, registerRoutes }: AppDeps): Express {
       next(error);
       return;
     }
-    req.log.error({ err: error }, "unhandled error");
+    req.log.error({ err: safeError(error) }, "unhandled error");
     const body: ApiError = { error: { code: "internal", message: "Internal server error" } };
     res.status(500).json(body);
   };

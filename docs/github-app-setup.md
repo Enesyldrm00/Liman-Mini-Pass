@@ -18,7 +18,7 @@ Production gets a separate App (phase 4) with `https://` URLs and its own key an
 | Private key     | `secrets/app.pem`                                 |
 | Who can install | Only this account                                 |
 
-The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. The endpoints themselves arrive in later steps: sign-in in 0.7, installation setup in 0.8, the webhook receiver in 1.2. Until then GitHub can redirect to them, but the API answers 404.
+The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. Sign-in (the callback) works since 0.7; the setup endpoint arrives in 0.8 and the webhook receiver in 1.2. Until then GitHub can redirect to those, but the API answers 404.
 
 ## 1. Create a smee.io channel
 
@@ -141,7 +141,7 @@ gh api user --jq .id
 curl -s https://api.github.com/users/<your-login> | grep '"id"'
 ```
 
-The API and worker read these variables once the code that needs them exists (0.7 and later). Nothing reads them yet. The local stack does not read `.env` yet either: passing these variables and the key file into the compose services comes with 0.7.
+The API reads the client ID and secret, the allow list and `SESSION_TTL_HOURS` at startup and refuses to start without them. In the local stack, compose passes `.env` to the api service; connection settings such as `DATABASE_URL` still come from `infra/compose/compose.yaml`. The App ID and the private key file are used from 0.8 on.
 
 ## 5. Check webhook delivery
 

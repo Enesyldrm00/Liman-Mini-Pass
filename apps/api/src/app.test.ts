@@ -1,3 +1,4 @@
+import { DrizzleQueryError } from "drizzle-orm";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 import { createApp, type AppDeps } from "./app.js";
@@ -52,6 +53,45 @@ describe("error handler", () => {
   });
 });
 
+describe("error handler with database errors", () => {
+  it("logs a failed query without its SQL parameters or the values Postgres echoes", async () => {
+    const pgError = Object.assign(new Error("duplicate key value: Key (github_id)=(4242) exists"), {
+      name: "DatabaseError",
+      code: "23505",
+      constraint: "users_github_id_unique",
+      table: "users",
+      detail: "Key (github_id)=(4242) already exists.",
+    });
+    const { app, lines } = setup((app) => {
+      app.get("/db-boom", () => {
+        throw new DrizzleQueryError(
+          "select * from sessions where token_hash = $1",
+          ["secret-token-hash"],
+          pgError,
+        );
+      });
+    });
+
+    await request(app).get("/db-boom").expect(500);
+    const raw = JSON.stringify(lines);
+    expect(raw).not.toContain("secret-token-hash");
+    expect(raw).not.toContain("4242");
+    expect(raw).not.toContain("token_hash = $1");
+    const errorLine = lines.find((line) => line.msg === "unhandled error");
+    expect(errorLine).toMatchObject({
+      err: {
+        type: "DrizzleQueryError",
+        cause: {
+          type: "DatabaseError",
+          code: "23505",
+          constraint: "users_github_id_unique",
+          table: "users",
+        },
+      },
+    });
+  });
+});
+
 describe("request ids", () => {
   it("generates an id, returns it and logs it", async () => {
     const { app, lines } = setup();
@@ -93,6 +133,19 @@ describe("log redaction", () => {
     await request(app).get("/api/auth/callback?code=secret-code&state=secret-state");
     expect(JSON.stringify(lines)).not.toContain("secret");
     expect(lines[0]).toMatchObject({ req: { url: "/api/auth/callback" } });
+  });
+
+  it("logs redirect targets without their query string", async () => {
+    const { app, lines } = setup((app) => {
+      app.get("/go", (_req, res) => {
+        res.redirect(302, "https://github.com/login/oauth/authorize?state=secret-state");
+      });
+    });
+    await request(app).get("/go").expect(302);
+    expect(JSON.stringify(lines)).not.toContain("secret");
+    expect(lines[0]).toMatchObject({
+      res: { headers: { location: "https://github.com/login/oauth/authorize" } },
+    });
   });
 
   it("does not log health checks that carry a query string", async () => {
