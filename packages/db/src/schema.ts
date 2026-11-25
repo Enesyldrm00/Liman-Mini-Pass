@@ -73,7 +73,11 @@ export const sessions = pgTable(
     expiresAt: timestamptz("expires_at").notNull(),
     lastSeenAt: timestamptz("last_seen_at").notNull().defaultNow(),
   },
-  (t) => [index("sessions_user_id_idx").on(t.userId)],
+  (t) => [
+    index("sessions_user_id_idx").on(t.userId),
+    // Lower-case hex SHA-256: a raw token written here by mistake is rejected.
+    check("sessions_token_hash_check", sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+  ],
 );
 
 export const githubInstallations = pgTable(
@@ -142,7 +146,11 @@ export const envVars = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [uniqueIndex("env_vars_app_id_key_unique").on(t.appId, t.key)],
+  (t) => [
+    uniqueIndex("env_vars_app_id_key_unique").on(t.appId, t.key),
+    // A plaintext value written by mistake is rejected. A new key version adds its prefix here.
+    check("env_vars_value_enc_check", sql`${t.valueEnc} like 'v1:%'`),
+  ],
 );
 
 export const builds = pgTable(
@@ -175,6 +183,8 @@ export const builds = pgTable(
     index("builds_active_idx").on(t.appId, t.status).where(inList(t.status, ACTIVE_BUILD_STATUSES)),
     check("builds_status_check", inList(t.status, BUILD_STATUSES)),
     check("builds_trigger_check", inList(t.trigger, BUILD_TRIGGERS)),
+    // Deploys use digests, never tags: a tag can move, a digest cannot (ROADMAP section 7).
+    check("builds_image_ref_check", sql`${t.imageRef} is null or ${t.imageRef} like '%@sha256:%'`),
     check(
       "builds_failed_stage_check",
       sql`${t.failedStage} is null or (${t.status} = 'failed' and ${inList(t.failedStage, BUILD_STAGES)})`,
@@ -225,6 +235,7 @@ export const deployments = pgTable(
     index("deployments_app_id_created_at_idx").on(t.appId, t.createdAt.desc()),
     check("deployments_status_check", inList(t.status, DEPLOYMENT_STATUSES)),
     check("deployments_kind_check", inList(t.kind, DEPLOYMENT_KINDS)),
+    check("deployments_image_ref_check", sql`${t.imageRef} like '%@sha256:%'`),
   ],
 );
 

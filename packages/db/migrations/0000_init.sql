@@ -45,6 +45,7 @@ CREATE TABLE "builds" (
 	"heartbeat_at" timestamp with time zone,
 	CONSTRAINT "builds_status_check" CHECK ("builds"."status" in ('queued', 'cloning', 'building', 'pushing', 'deploying', 'succeeded', 'failed', 'cancelled')),
 	CONSTRAINT "builds_trigger_check" CHECK ("builds"."trigger" in ('push', 'manual')),
+	CONSTRAINT "builds_image_ref_check" CHECK ("builds"."image_ref" is null or "builds"."image_ref" like '%@sha256:%'),
 	CONSTRAINT "builds_failed_stage_check" CHECK ("builds"."failed_stage" is null or ("builds"."status" = 'failed' and "builds"."failed_stage" in ('cloning', 'building', 'pushing', 'deploying')))
 );
 --> statement-breakpoint
@@ -59,7 +60,8 @@ CREATE TABLE "deployments" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"finished_at" timestamp with time zone,
 	CONSTRAINT "deployments_status_check" CHECK ("deployments"."status" in ('pending', 'active', 'superseded', 'failed')),
-	CONSTRAINT "deployments_kind_check" CHECK ("deployments"."kind" in ('build', 'rollback', 'redeploy'))
+	CONSTRAINT "deployments_kind_check" CHECK ("deployments"."kind" in ('build', 'rollback', 'redeploy')),
+	CONSTRAINT "deployments_image_ref_check" CHECK ("deployments"."image_ref" like '%@sha256:%')
 );
 --> statement-breakpoint
 CREATE TABLE "env_vars" (
@@ -67,7 +69,8 @@ CREATE TABLE "env_vars" (
 	"app_id" uuid NOT NULL,
 	"key" text NOT NULL,
 	"value_enc" text NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "env_vars_value_enc_check" CHECK ("env_vars"."value_enc" like 'v1:%')
 );
 --> statement-breakpoint
 CREATE TABLE "github_installations" (
@@ -88,7 +91,8 @@ CREATE TABLE "sessions" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "sessions_token_hash_unique" UNIQUE("token_hash")
+	CONSTRAINT "sessions_token_hash_unique" UNIQUE("token_hash"),
+	CONSTRAINT "sessions_token_hash_check" CHECK ("sessions"."token_hash" ~ '^[0-9a-f]{64}$')
 );
 --> statement-breakpoint
 CREATE TABLE "users" (

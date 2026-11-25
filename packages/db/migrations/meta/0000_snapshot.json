@@ -1,5 +1,5 @@
 {
-  "id": "6a2c2ca5-dee4-40be-98b4-c50de08ddc66",
+  "id": "24686501-0d2e-4a55-8a6b-2ff0689b17b9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -422,6 +422,10 @@
           "name": "builds_trigger_check",
           "value": "\"builds\".\"trigger\" in ('push', 'manual')"
         },
+        "builds_image_ref_check": {
+          "name": "builds_image_ref_check",
+          "value": "\"builds\".\"image_ref\" is null or \"builds\".\"image_ref\" like '%@sha256:%'"
+        },
         "builds_failed_stage_check": {
           "name": "builds_failed_stage_check",
           "value": "\"builds\".\"failed_stage\" is null or (\"builds\".\"status\" = 'failed' and \"builds\".\"failed_stage\" in ('cloning', 'building', 'pushing', 'deploying'))"
@@ -569,6 +573,10 @@
         "deployments_kind_check": {
           "name": "deployments_kind_check",
           "value": "\"deployments\".\"kind\" in ('build', 'rollback', 'redeploy')"
+        },
+        "deployments_image_ref_check": {
+          "name": "deployments_image_ref_check",
+          "value": "\"deployments\".\"image_ref\" like '%@sha256:%'"
         }
       },
       "isRLSEnabled": false
@@ -651,7 +659,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "env_vars_value_enc_check": {
+          "name": "env_vars_value_enc_check",
+          "value": "\"env_vars\".\"value_enc\" like 'v1:%'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.github_installations": {
@@ -836,7 +849,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "sessions_token_hash_check": {
+          "name": "sessions_token_hash_check",
+          "value": "\"sessions\".\"token_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.users": {
