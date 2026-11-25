@@ -81,11 +81,13 @@ export function createSessionStore(db: Database, options: SessionStoreOptions): 
         await db.delete(sessions).where(eq(sessions.id, row.sessionId));
         return null;
       }
-      if (current.getTime() - row.lastSeenAt.getTime() >= LAST_SEEN_INTERVAL_MS) {
+      const staleBefore = new Date(current.getTime() - LAST_SEEN_INTERVAL_MS);
+      if (row.lastSeenAt.getTime() <= staleBefore.getTime()) {
+        // The condition is repeated in the UPDATE, so concurrent requests write it once.
         await db
           .update(sessions)
           .set({ lastSeenAt: current })
-          .where(eq(sessions.id, row.sessionId));
+          .where(and(eq(sessions.id, row.sessionId), lte(sessions.lastSeenAt, staleBefore)));
       }
       return { sessionId: row.sessionId, user: row.user };
     },
