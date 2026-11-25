@@ -4,6 +4,8 @@ Liman talks to GitHub through a **GitHub App**, not an OAuth App: it signs users
 
 This guide creates the App, stores its credentials outside the repository and checks that GitHub can deliver webhooks. It takes about ten minutes.
 
+Production gets a separate App (phase 4) with `https://` URLs and its own key and secrets. Never reuse the development credentials there.
+
 ## Values used below
 
 | Setting         | Value                                             |
@@ -25,7 +27,14 @@ GitHub cannot reach `localhost`, so in development webhooks go through [smee.io]
 1. Open <https://smee.io/new>. You land on a channel page; its address is your channel URL (`https://smee.io/<random>`).
 2. Keep the tab open: deliveries show up there live.
 
-Treat the channel URL as private. Anyone who has it can read the payloads (repository names, commit messages). They cannot forge deliveries that Liman accepts, because every delivery is signed with the webhook secret and Liman checks that signature (ROADMAP section 13). The URL goes only into `.env`, never into a committed file.
+Treat the channel URL as private. The channel page shows every delivery with its headers, so anyone who has the URL can:
+
+- read the payloads (repository names, commit messages);
+- **replay** a delivery: post a captured body and its `X-Hub-Signature-256` back to the channel. The signature still matches, because HMAC only proves the body came from GitHub, not that it is new. Liman's webhook endpoint (1.2) drops repeated deliveries, but `X-GitHub-Delivery` is not covered by the signature and duplicate records are kept for 7 days, so the signature check alone does not stop a replay.
+
+What they cannot do is send a body GitHub never signed or change one; Liman rejects those (ROADMAP section 13). The URL goes only into `.env`, never into a committed file. If it leaks, open a new channel (see [Rotating credentials](#rotating-credentials)).
+
+This is a development-only exposure: the production App sends webhooks straight to Liman over HTTPS, with no relay in between.
 
 The local client that forwards the channel to the API is added in 1.2, together with the webhook endpoint. For this step the channel page is enough.
 
@@ -41,7 +50,7 @@ Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHu
 **Identifying and authorizing users**
 
 - **Callback URL:** `http://liman.localhost/api/auth/github/callback`
-- **Expire user authorization tokens:** leave checked. Liman uses the user token only once at sign-in and never stores it.
+- **Expire user authorization tokens:** leave checked. Liman uses the user token only during the request that receives it and never stores it.
 - **Request user authorization (OAuth) during installation:** leave **unchecked**. When it is checked, GitHub disables the Setup URL and sends users to the callback URL after installing. Liman needs the setup redirect to verify the new `installation_id` against the user's installations (0.8).
 - **Enable Device Flow:** leave unchecked.
 
@@ -95,15 +104,19 @@ On the App's **General** page:
    ```sh
    mkdir -p secrets
    mv ~/Downloads/liman-dev-06.*.private-key.pem secrets/app.pem
+   chmod 600 secrets/app.pem   # macOS/Linux; owner read/write only
    ```
 
-`secrets/`, `*.pem` and `.env` are git-ignored. Confirm before committing anything:
+   `mv` leaves no copy behind; if you copied the file instead, delete the one in Downloads.
+
+`secrets/`, `*.pem` and `.env` (and variants such as `.env.local`) are git-ignored. Confirm before committing anything:
 
 ```sh
 git check-ignore -v secrets/app.pem .env
+git status --short   # neither path may appear here
 ```
 
-Both paths must be listed. If one is missing, stop and fix `.gitignore` first.
+Both paths must be listed by `check-ignore`. If one is missing, stop and fix `.gitignore` first. Stage files by name rather than with `git add -A`.
 
 ## 4. Fill in `.env`
 
@@ -128,7 +141,7 @@ gh api user --jq .id
 curl -s https://api.github.com/users/<your-login> | grep '"id"'
 ```
 
-The API and worker read these variables once the code that needs them exists (0.7 and later). Nothing reads them yet.
+The API and worker read these variables once the code that needs them exists (0.7 and later). Nothing reads them yet. The local stack does not read `.env` yet either: passing these variables and the key file into the compose services comes with 0.7.
 
 ## 5. Check webhook delivery
 
@@ -153,5 +166,6 @@ Changing the repository selection later sends an `installation_repositories` del
 - **Private key:** generate a new key, replace `secrets/app.pem`, restart api and worker, then delete the old key on GitHub.
 - **Client secret:** generate a new one, update `.env`, restart the API, delete the old one.
 - **Webhook secret:** change it on GitHub and in `.env` together; deliveries signed with the other value are rejected while they differ.
+- **smee.io channel:** open a new one at <https://smee.io/new>, set it as the App's Webhook URL and as `SMEE_URL`, restart the forwarder. The old channel stays readable, so stop using it.
 
-A leaked key or secret is rotated right away, before anything else.
+A leaked key or secret is rotated right away, before anything else. Deleting a leaked private key does not revoke installation tokens already issued with it; they stay valid for up to one hour. If misuse is suspected, also uninstall and reinstall the App.

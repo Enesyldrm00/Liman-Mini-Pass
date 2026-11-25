@@ -40,7 +40,7 @@ pnpm stack:down
 
 ## GitHub App
 
-Sign-in, repository access and webhooks go through a GitHub App. For development, create your own `liman-dev-06` App and store its credentials in `.env` and `secrets/` (both git-ignored); the steps are in [`docs/github-app-setup.md`](docs/github-app-setup.md).
+Sign-in, repository access and webhooks go through a GitHub App. For development, create your own development App (ours is `liman-dev-06`) and store its credentials in `.env` and `secrets/` (both git-ignored); the steps are in [`docs/github-app-setup.md`](docs/github-app-setup.md).
 
 ## Layout
 
