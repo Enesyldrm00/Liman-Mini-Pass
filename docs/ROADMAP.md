@@ -122,6 +122,10 @@ Ek — Yeni sohbet için bağlam
 - Clickjacking koruması: Traefik headers middleware ile panel ve API cevaplarına `Content-Security-Policy: frame-ancestors 'none'` ve `X-Frame-Options: DENY`. Kardeş subdomain'deki bir uygulama paneli görünmez iframe'e koyup tıklatabilir; Origin kontrolü bunu durdurmaz. 0.9'da tek düğme "Sign out"; Faz 1'de ilk durum değiştiren düğmeyle (deploy, rollback, silme) birlikte ele alınmalı (0.9 güvenlik denetimi)
 - Geliştirme ortamında Traefik'in 80 portunu `127.0.0.1:80`'e bağlamak; şu an aynı ağdaki biri `Host: liman.localhost` ile Vite dev sunucusuna ve API'ye ulaşabiliyor (0.9 güvenlik denetimi)
 - Bağımlılık ve GitHub Action güncellemelerini otomatik PR'larla getirmek (Dependabot ya da Renovate); şu an SHA'lar ve sürümler elle güncelleniyor (0.10, ADR-0020)
+- Dev bağımlılıkları için ayrı, kırmızıya düşürmeyen bir denetim (`pnpm audit --audit-level critical`); vite ve esbuild panel bundle'ını üretiyor (0.10 güvenlik denetimi)
+- Testcontainers ve compose imajlarını tag yerine `@sha256:` digest'iyle sabitlemek (0.10 güvenlik denetimi)
+- CI runner'ını `ubuntu-latest` yerine sabit bir sürüme (`ubuntu-24.04`) bağlamak (0.10 güvenlik denetimi)
+- `v*` sürüm etiketleri için ruleset: silme ve taşıma yasak (0.10 güvenlik denetimi)
 
 **Bilinçli olarak kabul edilen sınırlamalar** (ADR'lerde yazılır):
 - Faz 1'de uygulamalar Docker ağı üzerinden birbirine erişebilir. Faz 2'de NetworkPolicy ile kapanır.
