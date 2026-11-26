@@ -18,7 +18,7 @@ CLAUDE.md ve ROADMAP Bölüm 16 geçerlidir. main'e doğrudan commit veya push y
 
 ## 2. Kontroller (biri kırmızıysa dur, düzelt, baştan al)
 
-- `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm format:check`
+- `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm format:check`, `pnpm build` (CI'daki `check` job'ıyla aynı adımlar)
 - Testler Bölüm 14'teki ilgili zorunlu senaryoları karşılıyor mu? Eksik varsa listele ve dur.
 - Sırlar: `git diff main...HEAD --name-only` içinde `.env`, `secrets/` ya da `*.pem` olmamalı. Diff'te token veya anahtar olmamalı.
 - Yeni ortam değişkeni eklendiyse `.env.example` güncel olmalı (Bölüm 15).
@@ -42,9 +42,11 @@ CLAUDE.md ve ROADMAP Bölüm 16 geçerlidir. main'e doğrudan commit veya push y
 
 ## 5. Merge
 
-- `gh pr checks` çalıştır:
-  - Check varsa hepsi yeşil olana kadar bekle. Kırmızıysa düzelt, push et, tekrar bekle.
-  - Hiç check yoksa (CI 0.10'da gelecek): 2. adımdaki lokal kontroller geçtiyse devam et. PR'a "CI not set up yet (0.10); local lint, typecheck, test and format checks passed." yorumunu yaz.
+- `gh pr checks --watch` ile `check` ve `audit` bitene kadar bekle (ADR-0020). main dal koruması ikisi de yeşil olmadan merge'e izin vermez.
+  - Kırmızıysa düzelt, push et, tekrar bekle.
+  - Hiç check yoksa **dur**: workflow tetiklenmemiş demektir (YAML hatası, Actions kapalı…). Nedenini bul; lokal kontrollerle merge etme.
+  - `.github/` altında değişiklik varsa Enes'e ayrıca göster: bir PR workflow'u değiştirerek zorunlu check'leri boşa çıkarabilir.
+- `gh pr view --json mergeStateStatus` `BEHIND` ise (main bu arada ilerledi; koruma strict): `gh pr update-branch`, sonra check'leri yeniden bekle. Dala giren merge commit'ini squash gizler.
 - Squash mesajını hazırla; GitHub'ın varsayılanı dal commit'lerini (ve içlerindeki eski trailer'ları) mesaja doldurur, ona bırakma:
   - Konu: Conventional Commits, İngilizce, sonunda alt bölüm no'su. Ör. `feat(api): GitHub installations and repo listing (0.8)`.
   - Gövde: PR'daki önemli maddelerden 3–6 kısa madde. Son satır `Closes #<issue>`. Co-author satırı yok.
