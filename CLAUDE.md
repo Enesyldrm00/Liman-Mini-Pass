@@ -21,7 +21,12 @@ Başlamadan önce docs/ROADMAP.md dosyasını oku (özellikle Bölüm 0, 16 ve s
 - Her alt görev ayrı commit. Conventional Commits: feat, fix, test, docs, refactor, chore, ci, build. Mesajlar İngilizce ve emir kipinde.
 - Commit tarihleri gerçektir; tarih, yazar veya geçmiş değiştirilmez. main'e force push yok.
 - Tek istisna: repodaki ilk commit (CLAUDE.md + ROADMAP) bootstrap olarak doğrudan main'e gider. Sonrası hep dal + PR.
-- PR'ı `gh` ile aç, şablonu doldur; "Türkçe özet" bölümünde 3–5 satırla ne yapıldığını ve nedenini yaz. CI yeşilse merge et (merge commit, squash yok) ve dalı sil. CI kırmızıysa düzelt, yeniden dene.
+- PR'ı `gh` ile aç, şablonu doldur; "Türkçe özet" bölümünde 3–5 satırla ne yapıldığını ve nedenini yaz. CI kırmızıysa düzelt, yeniden dene.
+- CI yeşilse **squash merge** et ve dalı sil: main'de her alt bölüm tek commit olur. Squash mesajını kendin ver (`gh pr merge --squash --subject … --body …`), GitHub'ın varsayılanına bırakma:
+  - Konu: Conventional Commits, İngilizce, sonunda alt bölüm no'su. Ör. `feat(api): GitHub installations and repo listing (0.8)`.
+  - Gövde: PR'daki önemli maddeler, kısa bir liste. Son satır `Closes #<issue>`.
+  - Dal içindeki küçük commit'ler sürer; onlar PR'da görünür.
+- Commit'lere ve PR'lara `Co-Authored-By: Claude` ya da "Generated with Claude Code" satırı eklenmez (`.claude/settings.json` → `attribution`).
 - Faz bitince: ROADMAP kutucuklarını işaretle (ayrı `docs:` commit'i), `docs/NOTES.md` güncelle, sürüm etiketi ve release notu (v0.1.0 = Faz 0, v0.2.0 = Faz 1, …).
 
 ## Kod
