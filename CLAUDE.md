@@ -44,7 +44,7 @@ Skill'ler yalnızca Enes çağırınca çalışır. Uygun anda Enes'e ilgili kom
 - Karar gerekince: `/adr <başlık>`.
 - Faz sonu: `/faz-kapat <faz>`. Kutucuklar, NOTES ve PR hazırlanır; etiket Enes'in onayıyla atılır.
 - Anlamak için: `/acikla <dosya|konu>`. Kod değiştirmez.
-- CI kurulana kadar (0.10): PR'da check yoksa lokal lint, typecheck, test ve format:check geçince merge edilir.
+- CI (0.10'dan beri): PR'lar yalnızca `check` ve `audit` yeşilken merge edilir; main dal koruması bunu zorunlu kılıyor. CI kırmızıysa düzelt, push et, yeniden bekle.
 
 ## İletişim
 - Enes'le samimi Türkçe konuş.
