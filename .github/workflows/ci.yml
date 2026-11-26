@@ -9,10 +9,11 @@ on:
 permissions:
   contents: read
 
-# A new push to the same PR or branch cancels the run it makes stale.
+# On a PR, a new push cancels the run it makes stale. Every commit on main gets its own
+# group instead: each one must finish with a verdict (phase tags, later deploys).
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
