@@ -124,7 +124,17 @@ export function createGitHubApp(options: GitHubAppOptions): GitHubApp {
         fetchImpl,
         "installation_token",
         `${GITHUB_API}/app/installations/${String(installationId)}/access_tokens`,
-        { method: "POST", headers: { ...GITHUB_HEADERS, authorization: `Bearer ${jwt}` } },
+        {
+          method: "POST",
+          headers: {
+            ...GITHUB_HEADERS,
+            authorization: `Bearer ${jwt}`,
+            "content-type": "application/json",
+          },
+          // The API only lists repositories and branches, so its tokens cannot read code
+          // and a leaked one is worth less. The worker asks for contents in phase 1.
+          body: JSON.stringify({ permissions: { metadata: "read" } }),
+        },
         fail,
       );
       const body = parse(

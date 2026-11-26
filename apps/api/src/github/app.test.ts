@@ -9,6 +9,7 @@ interface Call {
   method: string;
   url: string;
   authorization: string | null;
+  body: string | undefined;
 }
 
 type Handler = (call: Call) => Response;
@@ -21,6 +22,7 @@ function fakeFetch(handler: Handler) {
       method: init?.method ?? "GET",
       url: input instanceof Request ? input.url : String(input),
       authorization: new Headers(init?.headers).get("authorization"),
+      body: typeof init?.body === "string" ? init.body : undefined,
     };
     calls.push(call);
     return Promise.resolve(handler(call));
@@ -72,6 +74,8 @@ describe("installation tokens", () => {
       method: "POST",
       url: "https://api.github.com/app/installations/7/access_tokens",
     });
+    // Metadata only: the API's tokens cannot read repository contents.
+    expect(JSON.parse(tokenCalls[0]?.body ?? "")).toEqual({ permissions: { metadata: "read" } });
     const jwt = (tokenCalls[0]?.authorization ?? "").replace(/^Bearer /, "");
     const [header = "", payload = "", signature = ""] = jwt.split(".");
     expect(
