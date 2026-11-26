@@ -2,7 +2,7 @@ import type { Installation } from "@liman/shared";
 import { useQuery } from "@tanstack/react-query";
 import { fetchInstallations } from "../api/endpoints";
 import { RepoList } from "../components/RepoList";
-import { ErrorMessage, Loading } from "../components/Status";
+import { ErrorMessage, Loading, StaleWarning } from "../components/Status";
 
 export function HomePage() {
   const installations = useQuery({ queryKey: ["installations"], queryFn: fetchInstallations });
@@ -10,21 +10,34 @@ export function HomePage() {
   if (installations.isPending) {
     return <Loading />;
   }
-  if (installations.isError) {
+  // A failed refresh keeps the list already on screen; only a failed first load replaces it.
+  if (installations.data === undefined) {
     return (
-      <ErrorMessage onRetry={() => void installations.refetch()}>
+      <ErrorMessage
+        onRetry={() => void installations.refetch()}
+        retrying={installations.isFetching}
+      >
         Could not load your GitHub installations.
       </ErrorMessage>
     );
   }
 
   const { installations: list, installUrl } = installations.data;
+  const stale = installations.isRefetchError && (
+    <StaleWarning>Could not refresh your GitHub installations; showing the last list.</StaleWarning>
+  );
   if (list.length === 0) {
-    return <InstallPrompt installUrl={installUrl} />;
+    return (
+      <div>
+        {stale}
+        <InstallPrompt installUrl={installUrl} />
+      </div>
+    );
   }
 
   return (
     <div>
+      {stale}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-slate-900">Repositories</h1>
         <a href={installUrl} className="text-sm text-slate-700 underline">

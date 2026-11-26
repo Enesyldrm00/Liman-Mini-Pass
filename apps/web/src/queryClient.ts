@@ -20,7 +20,10 @@ export function createQueryClient(options: { retry?: boolean } = {}): QueryClien
     defaultOptions: {
       queries: {
         retry: options.retry === false ? false : shouldRetry,
+        // Lists come from GitHub page by page; refetching every loaded page on each focus or
+        // reconnect would spend the installation's API quota for little gain.
         refetchOnWindowFocus: false,
+        refetchOnReconnect: false,
       },
     },
   });

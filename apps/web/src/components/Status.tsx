@@ -8,7 +8,16 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
   );
 }
 
-export function ErrorMessage({ children, onRetry }: { children: ReactNode; onRetry?: () => void }) {
+export function ErrorMessage({
+  children,
+  onRetry,
+  retrying = false,
+}: {
+  children: ReactNode;
+  onRetry?: () => void;
+  /** Disables the retry button while the retry is in flight. */
+  retrying?: boolean;
+}) {
   return (
     <div
       role="alert"
@@ -16,10 +25,27 @@ export function ErrorMessage({ children, onRetry }: { children: ReactNode; onRet
     >
       {children}
       {onRetry && (
-        <button type="button" onClick={onRetry} className="ml-2 font-medium underline">
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retrying}
+          className="ml-2 font-medium underline disabled:opacity-50"
+        >
           Try again
         </button>
       )}
     </div>
+  );
+}
+
+/** Shown above data that is still on screen when refreshing it failed. */
+export function StaleWarning({ children }: { children: ReactNode }) {
+  return (
+    <p
+      role="alert"
+      className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+    >
+      {children}
+    </p>
   );
 }
