@@ -35,4 +35,13 @@ describe("response schemas", () => {
     };
     expect(installationListSchema.parse(body)).toEqual(body);
   });
+
+  it.each([
+    "javascript:alert(1)",
+    "http://github.com/apps/liman-dev-06/installations/new",
+    "https://evil.example/apps/liman-dev-06/installations/new",
+    "https://github.com.evil.example/apps/liman-dev-06/installations/new",
+  ])("reject the install URL %s", (installUrl) => {
+    expect(installationListSchema.safeParse({ installations: [], installUrl }).success).toBe(false);
+  });
 });

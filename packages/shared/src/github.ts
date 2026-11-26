@@ -36,8 +36,11 @@ export type Installation = z.infer<typeof installationSchema>;
 /** Body of `GET /api/github/installations`. */
 export const installationListSchema = z.object({
   installations: z.array(installationSchema),
-  /** Where the panel sends the user to install the App or change its repositories. */
-  installUrl: z.url(),
+  /**
+   * Where the panel sends the user to install the App or change its repositories. The panel
+   * puts it in an href, so only https links to github.com pass (no `javascript:` URLs).
+   */
+  installUrl: z.url({ protocol: /^https$/, hostname: /^github\.com$/ }),
 });
 export type InstallationList = z.infer<typeof installationListSchema>;
 
