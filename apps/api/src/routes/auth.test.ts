@@ -30,6 +30,7 @@ import { createSessionStore } from "../auth/sessions.js";
 import { hashToken, pkceChallenge } from "../auth/tokens.js";
 import type { Config } from "../config/index.js";
 import type { GitHubApp } from "../github/app.js";
+import { syncInstallations } from "../github/installations.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
 
@@ -479,6 +480,79 @@ describe("installation sync on sign-in", () => {
     expect(await countUsers()).toBe(0);
     expect(await countSessions()).toBe(0);
     expect(gh.revoked).toBe(1);
+  });
+});
+
+describe("syncInstallations", () => {
+  async function makeUser(githubId: number) {
+    const [row] = await dbClient.db
+      .insert(users)
+      .values({ githubId, login: `user-${String(githubId)}` })
+      .returning();
+    if (!row) throw new Error("no user");
+    return row;
+  }
+
+  async function addApp(ownerId: string, installationRef: string, subdomain: string) {
+    await dbClient.db.insert(apps).values({
+      ownerId,
+      installationRef,
+      name: subdomain,
+      subdomain,
+      repoId: 1,
+      repoFullName: "enes/demo",
+      branch: "main",
+      port: 3000,
+    });
+  }
+
+  it("deletes every row without apps when GitHub reports none", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    await syncInstallations(dbClient.db, me.id, [installation(11), installation(12)]);
+
+    const result = await syncInstallations(dbClient.db, me.id, []);
+    expect(result).toEqual({ synced: 0, removed: 2, keptWithApps: 0, ownedByOthers: 0 });
+    expect(await installationRows()).toHaveLength(0);
+  });
+
+  it("counts each outcome in one sync", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    const other = await makeUser(2002);
+    await syncInstallations(dbClient.db, other.id, [installation(30, "acme")]);
+    await syncInstallations(dbClient.db, me.id, [installation(10), installation(20)]);
+    const withApp = (await installationRows()).find((row) => row.installationId === 20);
+    await addApp(me.id, withApp?.id ?? "", "kept");
+
+    // 10 stays, 20 vanished but has an app, 21 is new, 30 belongs to someone else.
+    // 10 is repeated, as a shifted page boundary can do.
+    const result = await syncInstallations(dbClient.db, me.id, [
+      installation(30, "acme"),
+      installation(10),
+      installation(21),
+      installation(10),
+    ]);
+    expect(result).toEqual({ synced: 2, removed: 0, keptWithApps: 1, ownedByOthers: 1 });
+
+    const rows = await installationRows();
+    expect(rows.map((row) => [row.installationId, row.ownerId])).toEqual([
+      [10, me.id],
+      [20, me.id],
+      [21, me.id],
+      [30, other.id],
+    ]);
+  });
+
+  it("does not deadlock when two users sync shared installations in opposite orders", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    const other = await makeUser(2002);
+    const ids = Array.from({ length: 20 }, (_, i) => installation(100 + i));
+    await Promise.all(
+      Array.from({ length: 5 }, () => [
+        syncInstallations(dbClient.db, me.id, ids),
+        syncInstallations(dbClient.db, other.id, [...ids].reverse()),
+      ]).flat(),
+    );
+    expect(await installationRows()).toHaveLength(20);
   });
 });
 

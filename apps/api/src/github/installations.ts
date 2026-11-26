@@ -23,9 +23,14 @@ export async function syncInstallations(
   ownerId: string,
   installations: readonly UserInstallation[],
 ): Promise<SyncResult> {
+  // One entry per installation (page boundaries can shift and repeat one), in a fixed
+  // order: two concurrent syncs then lock shared rows in the same order and cannot deadlock.
+  const unique = [...new Map(installations.map((item) => [item.installationId, item])).values()];
+  unique.sort((x, y) => x.installationId - y.installationId);
+
   return db.transaction(async (tx) => {
     let synced = 0;
-    for (const item of installations) {
+    for (const item of unique) {
       const values = {
         accountLogin: item.accountLogin,
         accountType: item.accountType,
@@ -45,7 +50,7 @@ export async function syncInstallations(
       synced += rows.length;
     }
 
-    const ids = installations.map((item) => item.installationId);
+    const ids = unique.map((item) => item.installationId);
     const gone = and(
       eq(githubInstallations.ownerId, ownerId),
       ids.length > 0 ? notInArray(githubInstallations.installationId, ids) : undefined,
@@ -72,7 +77,7 @@ export async function syncInstallations(
       synced,
       removed: removed.length,
       keptWithApps: kept,
-      ownedByOthers: installations.length - synced,
+      ownedByOthers: unique.length - synced,
     };
   });
 }
