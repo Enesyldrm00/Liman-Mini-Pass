@@ -4,6 +4,5 @@ export default defineConfig({
   test: {
     name: "@liman/shared",
     include: ["src/**/*.test.ts"],
-    passWithNoTests: true,
   },
 });
