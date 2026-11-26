@@ -18,7 +18,7 @@ Production gets a separate App (phase 4) with `https://` URLs and its own key an
 | Private key     | `secrets/app.pem`                                 |
 | Who can install | Only this account                                 |
 
-The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. Sign-in (the callback) works since 0.7; the setup endpoint arrives in 0.8 and the webhook receiver in 1.2. Until then GitHub can redirect to those, but the API answers 404.
+The callback and setup URLs point at the local stack (`pnpm stack:up`), where Traefik sends `liman.localhost/api/*` to the API. Sign-in (the callback) works since 0.7 and the setup endpoint since 0.8; the webhook receiver arrives in 1.2.
 
 ## 1. Create a smee.io channel
 
@@ -51,7 +51,7 @@ Go to **GitHub → Settings → Developer settings → GitHub Apps → New GitHu
 
 - **Callback URL:** `http://liman.localhost/api/auth/github/callback`
 - **Expire user authorization tokens:** leave checked. Liman uses the user token only during the request that receives it and never stores it.
-- **Request user authorization (OAuth) during installation:** leave **unchecked**. When it is checked, GitHub disables the Setup URL and sends users to the callback URL after installing. Liman needs the setup redirect to verify the new `installation_id` against the user's installations (0.8).
+- **Request user authorization (OAuth) during installation:** leave **unchecked**. When it is checked, GitHub disables the Setup URL and sends users to the callback URL after installing. Liman's setup endpoint sends the user through sign-in, which syncs installations from GitHub with the user's own token (ADR-0002).
 - **Enable Device Flow:** leave unchecked.
 
 **Post installation**
@@ -141,7 +141,7 @@ gh api user --jq .id
 curl -s https://api.github.com/users/<your-login> | grep '"id"'
 ```
 
-The API reads the client ID and secret, the allow list and `SESSION_TTL_HOURS` at startup and refuses to start without them. In the local stack, compose passes `.env` to the api service; connection settings such as `DATABASE_URL` still come from `infra/compose/compose.yaml`. The App ID and the private key file are used from 0.8 on.
+The API reads the client ID and secret, the allow list and `SESSION_TTL_HOURS` at startup and refuses to start without them. In the local stack, compose passes `.env` to the api service; connection settings such as `DATABASE_URL` still come from `infra/compose/compose.yaml`. Since 0.8 it also reads the App ID, the slug and the private key; it parses the key at startup and exits if the file is missing or is not an RSA private key. In the local stack the key is mounted into the api container as a compose secret (`/run/secrets/github_app_key`), so the path in `.env` only matters when the API runs on the host.
 
 ## 5. Check webhook delivery
 
@@ -156,7 +156,7 @@ If the ping is missing, check the Webhook URL and that **Active** is checked, th
 
 1. Open **Install App** in the App settings (or `https://github.com/apps/liman-dev-06/installations/new`).
 2. Install it on your account, on **Only select repositories** with at least one repository you want to deploy, for example `liman-sample-app`.
-3. GitHub redirects to the Setup URL with `installation_id` and `setup_action=install` in the query string. Until 0.8 the API answers 404; that is expected.
+3. GitHub redirects to the Setup URL with `installation_id` and `setup_action=install` in the query string. The API does not trust that ID: it sends the browser through sign-in (instant, since you already authorized the App), stores the installations GitHub reports for you and lands you on the panel. `GET /api/github/installations` now lists the installation.
 4. The smee.io channel shows an `installation` delivery with `action: created`.
 
 Changing the repository selection later sends an `installation_repositories` delivery.

@@ -3,8 +3,9 @@ import { cookieNames } from "../auth/cookies.js";
 import { requireSameOrigin } from "../middleware/origin-check.js";
 import { loadSession } from "../middleware/session.js";
 import { authRouter, type AuthRouteDeps } from "./auth.js";
+import { githubRouter, type GitHubRouteDeps } from "./github.js";
 
-export type ApiDeps = AuthRouteDeps;
+export type ApiDeps = AuthRouteDeps & GitHubRouteDeps;
 
 /** Mounts everything under `/api`. Pass the result to `createApp({ registerRoutes })`. */
 export function apiRoutes(deps: ApiDeps): (app: Express) => void {
@@ -20,5 +21,6 @@ export function apiRoutes(deps: ApiDeps): (app: Express) => void {
       }),
     );
     app.use("/api", authRouter(deps));
+    app.use("/api", githubRouter(deps));
   };
 }

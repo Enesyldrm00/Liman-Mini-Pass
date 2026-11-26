@@ -2,24 +2,41 @@
  * Integration tests for sign-in, sessions, Origin checks and the sign-in rate limit,
  * against real Postgres and Redis (Testcontainers). GitHub is replaced by a fake.
  */
+import { generateKeyPairSync } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
-import { createDb, runMigrations, sessions, users, type DbClient } from "@liman/db";
+import {
+  apps,
+  createDb,
+  githubInstallations,
+  runMigrations,
+  sessions,
+  users,
+  type DbClient,
+} from "@liman/db";
 import { parseSetCookie, type SetCookie } from "cookie";
 import { eq, sql } from "drizzle-orm";
 import { Redis } from "ioredis";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { GitHubAuthError, type GitHubAuth, type GitHubUser } from "../auth/github.js";
+import {
+  GitHubAuthError,
+  type GitHubAuth,
+  type GitHubUser,
+  type UserInstallation,
+} from "../auth/github.js";
 import { createSessionStore } from "../auth/sessions.js";
 import { hashToken, pkceChallenge } from "../auth/tokens.js";
 import type { Config } from "../config/index.js";
+import type { GitHubApp } from "../github/app.js";
+import { syncInstallations } from "../github/installations.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
 
 const PUBLIC_URL = "http://liman.localhost";
 const ALLOWED_ID = 1001;
+const APP_KEY = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 
 let pgContainer: StartedPostgreSqlContainer;
 let redisContainer: StartedRedisContainer;
@@ -45,15 +62,30 @@ afterAll(async () => {
 /** What the fake GitHub answers; reset before every test. */
 const gh: {
   user: GitHubUser;
+  installations: UserInstallation[];
   fail: boolean;
+  failInstallations: boolean;
   calls: number;
+  installationCalls: number;
+  revoked: number;
   challenges: Set<string>;
 } = {
   user: { id: ALLOWED_ID, login: "enes", avatarUrl: null },
+  installations: [],
   fail: false,
+  failInstallations: false,
   calls: 0,
+  installationCalls: 0,
+  revoked: 0,
   challenges: new Set(),
 };
+
+const installation = (id: number, accountLogin = "enes"): UserInstallation => ({
+  installationId: id,
+  accountLogin,
+  accountType: "User",
+  suspendedAt: null,
+});
 
 /** Like GitHub, the fake only redeems a code with the verifier of a challenge it issued. */
 const fakeGitHub: GitHubAuth = {
@@ -66,24 +98,47 @@ const fakeGitHub: GitHubAuth = {
     });
     return `https://github.test/authorize?${params.toString()}`;
   },
-  fetchUser: ({ codeVerifier }) => {
+  withUser: async ({ codeVerifier }, use) => {
     gh.calls += 1;
     if (gh.fail) {
-      return Promise.reject(new GitHubAuthError("bad_verification_code"));
+      throw new GitHubAuthError("bad_verification_code");
     }
     if (!gh.challenges.has(pkceChallenge(codeVerifier))) {
-      return Promise.reject(new GitHubAuthError("invalid_grant"));
+      throw new GitHubAuthError("invalid_grant");
     }
-    return Promise.resolve(gh.user);
+    try {
+      return await use({
+        user: gh.user,
+        installations: () => {
+          gh.installationCalls += 1;
+          return gh.failInstallations
+            ? Promise.reject(new GitHubAuthError("installations_http_502"))
+            : Promise.resolve(gh.installations);
+        },
+      });
+    } finally {
+      gh.revoked += 1;
+    }
   },
 };
 
+/** These tests never list repositories; the App client is covered in github.test.ts. */
+const unusedGitHubApp: GitHubApp = {
+  listRepos: () => Promise.reject(new Error("not used")),
+  findInstalledRepo: () => Promise.reject(new Error("not used")),
+  listBranches: () => Promise.reject(new Error("not used")),
+};
+
 beforeEach(async () => {
-  await dbClient.db.execute(sql`truncate users, sessions cascade`);
+  await dbClient.db.execute(sql`truncate users, sessions, github_installations, apps cascade`);
   await redis.flushall();
   gh.user = { id: ALLOWED_ID, login: "enes", avatarUrl: null };
+  gh.installations = [];
   gh.fail = false;
+  gh.failInstallations = false;
   gh.calls = 0;
+  gh.installationCalls = 0;
+  gh.revoked = 0;
   gh.challenges.clear();
 });
 
@@ -97,7 +152,13 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     redisUrl: "unused",
     allowedGithubIds: new Set([String(ALLOWED_ID)]),
     sessionTtlHours: 1,
-    github: { clientId: "unused", clientSecret: "unused" },
+    github: {
+      clientId: "unused",
+      clientSecret: "unused",
+      appId: 1,
+      appSlug: "liman-test",
+      privateKey: APP_KEY,
+    },
     ...overrides,
   };
 }
@@ -111,6 +172,7 @@ function makeApp(config: Config = makeConfig()) {
       db: dbClient.db,
       redis,
       github: fakeGitHub,
+      githubApp: unusedGitHubApp,
       sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
     }),
   });
@@ -168,6 +230,8 @@ async function signIn(app: App): Promise<string> {
 }
 
 const countSessions = async () => (await dbClient.db.select().from(sessions)).length;
+const installationRows = () =>
+  dbClient.db.select().from(githubInstallations).orderBy(githubInstallations.installationId);
 const countUsers = async () => (await dbClient.db.select().from(users)).length;
 
 describe("sign-in", () => {
@@ -259,6 +323,9 @@ describe("sign-in", () => {
     expect(cookieNamed(res, "liman_session")).toBeUndefined();
     expect(await countUsers()).toBe(0);
     expect(await countSessions()).toBe(0);
+    // Their installations are not even looked up, and the token is still revoked.
+    expect(gh.installationCalls).toBe(0);
+    expect(gh.revoked).toBe(1);
   });
 
   it("sends the browser back with an error when GitHub rejects the code", async () => {
@@ -316,6 +383,206 @@ describe("sign-in", () => {
 
     await request(app).get("/api/me").set("Cookie", `liman_session=${before}`).expect(401);
     expect(await countSessions()).toBe(1);
+  });
+});
+
+describe("installation sync on sign-in", () => {
+  it("stores the installations GitHub reports and revokes the user token", async () => {
+    gh.installations = [
+      installation(11),
+      { ...installation(12, "acme"), accountType: "Organization" },
+    ];
+    await signIn(makeApp());
+
+    const [user] = await dbClient.db.select().from(users);
+    const rows = await installationRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      installationId: 11,
+      ownerId: user?.id,
+      accountLogin: "enes",
+      accountType: "User",
+      suspendedAt: null,
+    });
+    expect(rows[1]).toMatchObject({ installationId: 12, accountType: "Organization" });
+    expect(gh.revoked).toBe(1);
+  });
+
+  it("updates changed installations and removes ones GitHub no longer reports", async () => {
+    const app = makeApp();
+    gh.installations = [installation(11), installation(12)];
+    await signIn(app);
+    const [before] = await installationRows();
+
+    const suspendedAt = new Date("2026-11-20T08:00:00Z");
+    gh.installations = [{ ...installation(11, "enes-renamed"), suspendedAt }];
+    await signIn(app);
+
+    const rows = await installationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      installationId: 11,
+      accountLogin: "enes-renamed",
+      suspendedAt,
+    });
+    // Same row, so anything pointing at it keeps working.
+    expect(rows[0]?.id).toBe(before?.id);
+  });
+
+  it("keeps an installation that apps still point at", async () => {
+    const app = makeApp();
+    gh.installations = [installation(11)];
+    await signIn(app);
+    const [row] = await installationRows();
+    const [user] = await dbClient.db.select().from(users);
+    await dbClient.db.insert(apps).values({
+      ownerId: user?.id ?? "",
+      installationRef: row?.id ?? "",
+      name: "demo",
+      subdomain: "demo",
+      repoId: 1,
+      repoFullName: "enes/demo",
+      branch: "main",
+      port: 3000,
+    });
+
+    gh.installations = [];
+    await signIn(app);
+    expect(await installationRows()).toHaveLength(1);
+  });
+
+  it("does not take over an installation another user owns", async () => {
+    const [other] = await dbClient.db
+      .insert(users)
+      .values({ githubId: 2002, login: "other" })
+      .returning();
+    await dbClient.db.insert(githubInstallations).values({
+      installationId: 11,
+      ownerId: other?.id ?? "",
+      accountLogin: "acme",
+      accountType: "Organization",
+    });
+
+    gh.installations = [installation(11, "acme-renamed")];
+    await signIn(makeApp());
+
+    const rows = await installationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ ownerId: other?.id, accountLogin: "acme" });
+  });
+
+  it("does not sign in or write anything when the installation lookup fails", async () => {
+    gh.failInstallations = true;
+    const app = makeApp();
+    const login = await startLogin(app);
+    const res = await callback(app, login).expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=github_failed`);
+    expect(await countUsers()).toBe(0);
+    expect(await countSessions()).toBe(0);
+    expect(gh.revoked).toBe(1);
+  });
+});
+
+describe("syncInstallations", () => {
+  async function makeUser(githubId: number) {
+    const [row] = await dbClient.db
+      .insert(users)
+      .values({ githubId, login: `user-${String(githubId)}` })
+      .returning();
+    if (!row) throw new Error("no user");
+    return row;
+  }
+
+  async function addApp(ownerId: string, installationRef: string, subdomain: string) {
+    await dbClient.db.insert(apps).values({
+      ownerId,
+      installationRef,
+      name: subdomain,
+      subdomain,
+      repoId: 1,
+      repoFullName: "enes/demo",
+      branch: "main",
+      port: 3000,
+    });
+  }
+
+  it("deletes every row without apps when GitHub reports none", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    await syncInstallations(dbClient.db, me.id, [installation(11), installation(12)]);
+
+    const result = await syncInstallations(dbClient.db, me.id, []);
+    expect(result).toEqual({ synced: 0, removed: 2, keptWithApps: 0, ownedByOthers: 0 });
+    expect(await installationRows()).toHaveLength(0);
+  });
+
+  it("counts each outcome in one sync", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    const other = await makeUser(2002);
+    await syncInstallations(dbClient.db, other.id, [installation(30, "acme")]);
+    await syncInstallations(dbClient.db, me.id, [installation(10), installation(20)]);
+    const withApp = (await installationRows()).find((row) => row.installationId === 20);
+    await addApp(me.id, withApp?.id ?? "", "kept");
+
+    // 10 stays, 20 vanished but has an app, 21 is new, 30 belongs to someone else.
+    // 10 is repeated, as a shifted page boundary can do.
+    const result = await syncInstallations(dbClient.db, me.id, [
+      installation(30, "acme"),
+      installation(10),
+      installation(21),
+      installation(10),
+    ]);
+    expect(result).toEqual({ synced: 2, removed: 0, keptWithApps: 1, ownedByOthers: 1 });
+
+    const rows = await installationRows();
+    expect(rows.map((row) => [row.installationId, row.ownerId])).toEqual([
+      [10, me.id],
+      [20, me.id],
+      [21, me.id],
+      [30, other.id],
+    ]);
+  });
+
+  it("does not deadlock when two users sync shared installations in opposite orders", async () => {
+    const me = await makeUser(ALLOWED_ID);
+    const other = await makeUser(2002);
+    const ids = Array.from({ length: 20 }, (_, i) => installation(100 + i));
+    await Promise.all(
+      Array.from({ length: 5 }, () => [
+        syncInstallations(dbClient.db, me.id, ids),
+        syncInstallations(dbClient.db, other.id, [...ids].reverse()),
+      ]).flat(),
+    );
+    expect(await installationRows()).toHaveLength(20);
+  });
+});
+
+describe("App setup return", () => {
+  it("sends the browser through sign-in instead of trusting installation_id", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/github/setup")
+      .query({ installation_id: "999", setup_action: "install" })
+      .expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/api/auth/github/login`);
+    expect(await installationRows()).toHaveLength(0);
+  });
+
+  it("stores only what GitHub reports, not the installation_id from the query", async () => {
+    const app = makeApp();
+    await request(app).get("/api/github/setup").query({ installation_id: "999" }).expect(302);
+    gh.installations = [installation(11)];
+    await signIn(app);
+
+    const rows = await installationRows();
+    expect(rows.map((row) => row.installationId)).toEqual([11]);
+  });
+
+  it("redirects even with a malformed query", async () => {
+    const res = await request(makeApp())
+      .get("/api/github/setup")
+      .query({ installation_id: "<script>", setup_action: "x" })
+      .expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/api/auth/github/login`);
   });
 });
 
