@@ -1,4 +1,4 @@
-# CI (ROADMAP 0.10, ADR-0020). Branch protection on main requires the `check` job.
+# CI (ROADMAP 0.10, ADR-0020). Branch protection on main requires the `check` and `audit` jobs.
 name: CI
 
 on:
@@ -40,3 +40,18 @@ jobs:
       # Integration tests start Postgres and Redis with Testcontainers; the runner has Docker.
       - run: pnpm test
       - run: pnpm build
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Production dependencies only; high and critical advisories fail the job (ROADMAP 13).
+      - run: pnpm audit --prod --audit-level high
