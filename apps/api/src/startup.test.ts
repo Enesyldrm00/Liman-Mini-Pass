@@ -34,6 +34,7 @@ describe("api startup", () => {
     expect(result.stderr).toContain("LIMAN_PUBLIC_URL: Required");
     expect(result.stderr).toContain("REDIS_URL: Required");
     expect(result.stderr).toContain("GITHUB_APP_CLIENT_SECRET: Required");
+    expect(result.stderr).toContain("GITHUB_APP_PRIVATE_KEY_PATH: Required");
     expect(result.stderr).toContain("DATABASE_URL:");
     expect(result.stderr).not.toContain("topsecret");
   }, 30_000);

@@ -2,6 +2,7 @@
  * Integration tests for sign-in, sessions, Origin checks and the sign-in rate limit,
  * against real Postgres and Redis (Testcontainers). GitHub is replaced by a fake.
  */
+import { generateKeyPairSync } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
 import { createDb, runMigrations, sessions, users, type DbClient } from "@liman/db";
@@ -20,6 +21,7 @@ import { apiRoutes } from "./index.js";
 
 const PUBLIC_URL = "http://liman.localhost";
 const ALLOWED_ID = 1001;
+const APP_KEY = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey;
 
 let pgContainer: StartedPostgreSqlContainer;
 let redisContainer: StartedRedisContainer;
@@ -97,7 +99,13 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     redisUrl: "unused",
     allowedGithubIds: new Set([String(ALLOWED_ID)]),
     sessionTtlHours: 1,
-    github: { clientId: "unused", clientSecret: "unused" },
+    github: {
+      clientId: "unused",
+      clientSecret: "unused",
+      appId: 1,
+      appSlug: "liman-test",
+      privateKey: APP_KEY,
+    },
     ...overrides,
   };
 }
