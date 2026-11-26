@@ -40,6 +40,7 @@ Sürümler: Faz 0 → `v0.1.0`, Faz 1 → `v0.2.0`, Faz 2 → `v0.3.0`, Faz 3 �
 ## 3. Etiket ve release (onay şart)
 
 - Release notu taslağını hazırla. Faz özeti ve son etiketten bu yana `git log --oneline` çıktısı Conventional Commits türlerine göre gruplanır.
+- Etiketlenecek commit'in (güncel main) CI'ı yeşil olmalı: `gh run list --branch main --commit <sha>` ile `check` ve `audit`'in `success` olduğunu göster. Çalışma sürüyorsa bekle; kırmızıysa etiket atma, dur.
 - Etiket adını ve notu Enes'e göster. Sor: "Etiketi atıp release'i yayınlayayım mı?"
 - **Onay gelirse:**
   - `git switch main && git pull --ff-only`

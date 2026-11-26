@@ -1,0 +1,63 @@
+# CI (ROADMAP 0.10, ADR-0020). Branch protection on main requires the `check` and `audit` jobs.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Weekly audit of main, so a new advisory shows up without waiting for the next PR.
+  schedule:
+    - cron: "17 6 * * 1"
+
+permissions:
+  contents: read
+
+# On a PR, a new push cancels the run it makes stale. Every commit on main gets its own
+# group instead: each one must finish with a verdict (phase tags, later deploys).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: check
+    # The weekly run only audits; main's code was checked when it was pushed.
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Actions are pinned to commit SHAs: a moved tag cannot change what runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs the pnpm version from package.json `packageManager`.
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm format:check
+      # Integration tests start Postgres and Redis with Testcontainers; the runner has Docker.
+      - run: pnpm test
+      - run: pnpm build
+
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Production dependencies only; high and critical advisories fail the job (ROADMAP 13).
+      - run: pnpm audit --prod --audit-level high

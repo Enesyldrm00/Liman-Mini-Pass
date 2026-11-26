@@ -70,3 +70,14 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - HMR istemci portu 80'e sabit; Vite host'ta doğrudan çalıştırılınca `/api` erişilemez, panel compose stack'iyle geliştiriliyor.
   - `apiErrorSchema` katı enum: API, shared'dan önce yeni bir hata kodu dönerse panel mesajı okuyamaz ve genel hata gösterir. Şemalar birlikte güncellenmeli.
   - Repo sayfalaması GitHub'ın offset sayfalaması; sayfalar arasında kayma olabilir, panel id'ye göre tekilleştiriyor ama bir repo arada kaybolabilir.
+
+### 0.10 CI
+
+- `.github/workflows/ci.yml` iki job çalıştırıyor. `check`: frozen-lockfile ile kurulum (pnpm önbellekli), lint, typecheck, format:check, bütün testler (Testcontainers dahil; Ubuntu runner'da Docker hazır) ve build. `audit`: `pnpm audit --prod --audit-level high`, ayrıca haftalık. Token salt okunur, action'lar commit SHA'sıyla sabitli; repo ayarında yalnızca GitHub'ın action'ları ve `pnpm/action-setup` izinli, SHA pin zorunlu, fork PR'ları onay bekliyor (ADR-0020).
+- main dal koruması: PR zorunlu (onay 0), `check` ve `audit` GitHub Actions uygulamasına bağlı zorunlu check'ler, strict, adminlere de uygulanıyor, force push ve silme kapalı. Kasıtlı kırık bir testle denendi: CI kırmızı → PR `BLOCKED`, geri alınınca `CLEAN`.
+- İnceleme bir gerçek hata buldu: concurrency main'deki çalışmaları da iptal ediyordu, art arda iki merge'de ilk commit hiç yeşil görmezdi. Artık PR'da eski çalışma iptal ediliyor, main'de her commit kendi grubunda (`github.sha`) çalışıyor. `passWithNoTests` kaldırıldı; test bulamayan proje artık kırmızı. Skill'ler CI'ı bekleyip `BEHIND`'da dalı güncelliyor, faz etiketi yalnızca CI'ı yeşil commit'e atılıyor.
+- **Kırılgan noktalar:**
+  - Bir PR kendi `ci.yml`'ini çalıştırır; workflow'u değiştirip zorunlu check'leri boşa çıkarabilir. Tek savunma `.github/` değişikliklerini merge'den önce elle okumak.
+  - `audit` npm'in advisory servisine bağlı; servis kesilirse bütün merge'ler bloklanır. Kodla ilgisiz yeni bir açık da PR'ı kırmızıya düşürebilir; istisna `--ignore` ile ve gerekçesi `ci.yml`'ye yazılarak verilir.
+  - Job adları (`check`, `audit`) dal korumasında birebir geçiyor; değişirse koruma da güncellenmeli. İzin listesinde olmayan yeni bir action önce repo ayarına eklenmeli.
+  - Strict yüzünden main ilerleyince açık PR'lar `BEHIND` olur ve CI yeniden çalışır.
