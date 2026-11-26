@@ -22,7 +22,7 @@ const rsaKeyPath = writeKeyFile(
   generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({
     type: "pkcs1",
     format: "pem",
-  }) as string,
+  }),
 );
 
 const validEnv = {
@@ -132,11 +132,11 @@ describe("loadConfig", () => {
       generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({
         type: "spki",
         format: "pem",
-      }) as string,
+      }),
     ],
     [
       "holds a non-RSA key",
-      generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }) as string,
+      generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }),
     ],
   ])("fails when the private key file %s", (label, content) => {
     const path = writeKeyFile(`${label.replaceAll(" ", "-")}.pem`, content);
