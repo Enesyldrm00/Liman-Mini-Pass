@@ -121,6 +121,7 @@ Ek — Yeni sohbet için bağlam
 - Webhook tekrar koruması: delivery ID'ye ek olarak `(repo_id, after SHA)` üzerinden idempotency; aynı commit için ikinci push build'i açılmaz (`X-GitHub-Delivery` imzanın kapsamında değil, smee üzerinden tekrar oynatma riski — 0.6 güvenlik denetimi)
 - Clickjacking koruması: Traefik headers middleware ile panel ve API cevaplarına `Content-Security-Policy: frame-ancestors 'none'` ve `X-Frame-Options: DENY`. Kardeş subdomain'deki bir uygulama paneli görünmez iframe'e koyup tıklatabilir; Origin kontrolü bunu durdurmaz. 0.9'da tek düğme "Sign out"; Faz 1'de ilk durum değiştiren düğmeyle (deploy, rollback, silme) birlikte ele alınmalı (0.9 güvenlik denetimi)
 - Geliştirme ortamında Traefik'in 80 portunu `127.0.0.1:80`'e bağlamak; şu an aynı ağdaki biri `Host: liman.localhost` ile Vite dev sunucusuna ve API'ye ulaşabiliyor (0.9 güvenlik denetimi)
+- Bağımlılık ve GitHub Action güncellemelerini otomatik PR'larla getirmek (Dependabot ya da Renovate); şu an SHA'lar ve sürümler elle güncelleniyor (0.10, ADR-0020)
 
 **Bilinçli olarak kabul edilen sınırlamalar** (ADR'lerde yazılır):
 - Faz 1'de uygulamalar Docker ağı üzerinden birbirine erişebilir. Faz 2'de NetworkPolicy ile kapanır.
@@ -987,6 +988,7 @@ ADR'ler Türkçe yazılır ve şu başlıkları içerir: Bağlam, Karar, Elenen 
 | 0017 | 4 | Yedekleme ve geri yükleme |
 | 0018 | 0 | Veritabanı katmanı: ayrı paket, text + CHECK, node-postgres |
 | 0019 | 0 | Panel: yönlendirme, API istemcisi ve test ortamı |
+| 0020 | 0 | CI ve main dal koruması |
 
 ---
 
