@@ -47,3 +47,15 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - `trust proxy` vekil sayısına bağlı; API host'ta önünde Traefik olmadan çalışırken hız sınırı `X-Forwarded-For` ile atlatılabilir. Faz 2'de k3s'te hop sayısı yeniden kontrol edilmeli.
   - Yeni bir loglama yolu eklerken: istek/cevap URL'lerinde sorgu dizesi, hata nesnelerinde DB parametreleri sır taşıyabilir. Nesneyi değil seçilmiş alanları logla.
   - 0.8 açık soruları: kullanıcı token'ı girişte installation senkronu için kullanılacak, ardından iptal edilecek; `installation_id` doğrulaması user token mı App JWT mi olacak, karar ADR-0002'ye.
+
+### 0.8 Installation ve repolar
+
+- Setup dönüşündeki `installation_id`'ye güvenilmiyor: `GET /api/github/setup` hiçbir şey yazmıyor, tarayıcıyı yeniden girişe yolluyor. App'i zaten yetkilendirmiş kullanıcı için bu tur ekran göstermeden geçiyor. Kurulumlar callback'te kullanıcının kendi token'ıyla `GET /user/installations`'tan alınıp tek transaction'da senkronlanıyor (upsert, başkasının satırına dokunmadan; GitHub'da görünmeyen ve app'i olmayan satırlar siliniyor). App JWT ile doğrulama elendi, çünkü organizasyon kurulumunda kullanıcının yetkisini göstermiyor (ADR-0002).
+- Kullanıcı token'ı yalnızca `withUser` bloğunda yaşıyor ve blok nasıl biterse bitsin `finally`'de GitHub'da iptal ediliyor; oturum iptalden sonra açılıyor. App JWT `node:crypto` ile RS256 (`iat` −60 sn, toplam ≤ 10 dk); özel anahtar açılışta ayrıştırılıyor, compose'da secret olarak bağlanıyor. Installation token'ları süreç belleğinde, bitişe 5 dk kalana kadar tutuluyor; eşzamanlı istekler tek token isteğini paylaşıyor; token yalnızca `metadata: read` yetkili.
+- Uçlar: kurulum listesi + kurulum linki, repolar, dallar. Oturum yoksa 401, başkasınınsa 403, yoksa 404, askıdaysa 409, GitHub hatasında 502 `upstream_failed`. İmleç GitHub sayfa numarası, en fazla 999. Uçtan uca gerçek GitHub ile denendi; JWT `GET /app` ile doğrulandı.
+- İnceleme iki gerçek hata buldu, ikisi de gerçek ortamda doğrulanıp düzeltildi: installation token kuruluma eklenmemiş public repoları da okuyabiliyor (`GET /repositories/:id` 200 dönüyordu), artık erişim kurulumun kendi repo listesinden kontrol ediliyor; ortak kurulumları farklı sırada senkronlayan iki giriş deadlock'a (40P01) düşüyordu, liste artık sıralanıyor.
+- **Kırılgan noktalar:**
+  - GitHub'da erişimini kaybeden kullanıcının app'li kurulum satırı silinmiyor ve repoları görmeye devam ediyor; webhook bunu çözmez (kurulum kaldırılmıyor). Faz 1'de app'ler gelince "erişim kaybedildi" işareti düşünülecek.
+  - `POST /api/apps` (Faz 1) senkronla aynı anda çalışırsa RESTRICT hatası girişi 500'e düşürebilir; o zaman test edilmeli. App oluşturma da repo erişimini `findInstalledRepo` ile kontrol etmeli, ID ile doğrudan sorgu yetmez.
+  - Kurulum bilgisi yalnızca giriş anındaki kadar güncel; askıya alma/kaldırma bir sonraki girişe kadar görünmüyor (uçlar 409/404 dönüyor). Webhook senkronu 1.2'de.
+  - Faz kapanışında ROADMAP §10 durum kodlarına 502 `upstream_failed` ve askıdaki kurulum için 409 eklenecek (onaylandı).
