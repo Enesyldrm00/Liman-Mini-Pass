@@ -3,9 +3,12 @@ import { ApiRequestError, isUnauthenticated } from "./api/client";
 
 export const ME_QUERY_KEY = ["me"] as const;
 
-/** Retries only failures that may pass on a second try: network errors and 5xx. */
-function shouldRetry(failureCount: number, error: unknown): boolean {
-  if (error instanceof ApiRequestError && error.status >= 400 && error.status < 500) {
+/**
+ * Retries only failures that may pass on a second try: network errors (status 0) and 5xx.
+ * A 4xx will answer the same again, and so will a 2xx body that failed schema validation.
+ */
+export function shouldRetry(failureCount: number, error: unknown): boolean {
+  if (error instanceof ApiRequestError && error.status !== 0 && error.status < 500) {
     return false;
   }
   return failureCount < 2;
