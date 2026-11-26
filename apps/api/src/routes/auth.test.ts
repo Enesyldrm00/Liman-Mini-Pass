@@ -5,14 +5,27 @@
 import { generateKeyPairSync } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
-import { createDb, runMigrations, sessions, users, type DbClient } from "@liman/db";
+import {
+  apps,
+  createDb,
+  githubInstallations,
+  runMigrations,
+  sessions,
+  users,
+  type DbClient,
+} from "@liman/db";
 import { parseSetCookie, type SetCookie } from "cookie";
 import { eq, sql } from "drizzle-orm";
 import { Redis } from "ioredis";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../app.js";
-import { GitHubAuthError, type GitHubAuth, type GitHubUser } from "../auth/github.js";
+import {
+  GitHubAuthError,
+  type GitHubAuth,
+  type GitHubUser,
+  type UserInstallation,
+} from "../auth/github.js";
 import { createSessionStore } from "../auth/sessions.js";
 import { hashToken, pkceChallenge } from "../auth/tokens.js";
 import type { Config } from "../config/index.js";
@@ -47,15 +60,30 @@ afterAll(async () => {
 /** What the fake GitHub answers; reset before every test. */
 const gh: {
   user: GitHubUser;
+  installations: UserInstallation[];
   fail: boolean;
+  failInstallations: boolean;
   calls: number;
+  installationCalls: number;
+  revoked: number;
   challenges: Set<string>;
 } = {
   user: { id: ALLOWED_ID, login: "enes", avatarUrl: null },
+  installations: [],
   fail: false,
+  failInstallations: false,
   calls: 0,
+  installationCalls: 0,
+  revoked: 0,
   challenges: new Set(),
 };
+
+const installation = (id: number, accountLogin = "enes"): UserInstallation => ({
+  installationId: id,
+  accountLogin,
+  accountType: "User",
+  suspendedAt: null,
+});
 
 /** Like GitHub, the fake only redeems a code with the verifier of a challenge it issued. */
 const fakeGitHub: GitHubAuth = {
@@ -68,24 +96,40 @@ const fakeGitHub: GitHubAuth = {
     });
     return `https://github.test/authorize?${params.toString()}`;
   },
-  fetchUser: ({ codeVerifier }) => {
+  withUser: async ({ codeVerifier }, use) => {
     gh.calls += 1;
     if (gh.fail) {
-      return Promise.reject(new GitHubAuthError("bad_verification_code"));
+      throw new GitHubAuthError("bad_verification_code");
     }
     if (!gh.challenges.has(pkceChallenge(codeVerifier))) {
-      return Promise.reject(new GitHubAuthError("invalid_grant"));
+      throw new GitHubAuthError("invalid_grant");
     }
-    return Promise.resolve(gh.user);
+    try {
+      return await use({
+        user: gh.user,
+        installations: () => {
+          gh.installationCalls += 1;
+          return gh.failInstallations
+            ? Promise.reject(new GitHubAuthError("installations_http_502"))
+            : Promise.resolve(gh.installations);
+        },
+      });
+    } finally {
+      gh.revoked += 1;
+    }
   },
 };
 
 beforeEach(async () => {
-  await dbClient.db.execute(sql`truncate users, sessions cascade`);
+  await dbClient.db.execute(sql`truncate users, sessions, github_installations, apps cascade`);
   await redis.flushall();
   gh.user = { id: ALLOWED_ID, login: "enes", avatarUrl: null };
+  gh.installations = [];
   gh.fail = false;
+  gh.failInstallations = false;
   gh.calls = 0;
+  gh.installationCalls = 0;
+  gh.revoked = 0;
   gh.challenges.clear();
 });
 
@@ -176,6 +220,8 @@ async function signIn(app: App): Promise<string> {
 }
 
 const countSessions = async () => (await dbClient.db.select().from(sessions)).length;
+const installationRows = () =>
+  dbClient.db.select().from(githubInstallations).orderBy(githubInstallations.installationId);
 const countUsers = async () => (await dbClient.db.select().from(users)).length;
 
 describe("sign-in", () => {
@@ -267,6 +313,9 @@ describe("sign-in", () => {
     expect(cookieNamed(res, "liman_session")).toBeUndefined();
     expect(await countUsers()).toBe(0);
     expect(await countSessions()).toBe(0);
+    // Their installations are not even looked up, and the token is still revoked.
+    expect(gh.installationCalls).toBe(0);
+    expect(gh.revoked).toBe(1);
   });
 
   it("sends the browser back with an error when GitHub rejects the code", async () => {
@@ -324,6 +373,103 @@ describe("sign-in", () => {
 
     await request(app).get("/api/me").set("Cookie", `liman_session=${before}`).expect(401);
     expect(await countSessions()).toBe(1);
+  });
+});
+
+describe("installation sync on sign-in", () => {
+  it("stores the installations GitHub reports and revokes the user token", async () => {
+    gh.installations = [
+      installation(11),
+      { ...installation(12, "acme"), accountType: "Organization" },
+    ];
+    await signIn(makeApp());
+
+    const [user] = await dbClient.db.select().from(users);
+    const rows = await installationRows();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      installationId: 11,
+      ownerId: user?.id,
+      accountLogin: "enes",
+      accountType: "User",
+      suspendedAt: null,
+    });
+    expect(rows[1]).toMatchObject({ installationId: 12, accountType: "Organization" });
+    expect(gh.revoked).toBe(1);
+  });
+
+  it("updates changed installations and removes ones GitHub no longer reports", async () => {
+    const app = makeApp();
+    gh.installations = [installation(11), installation(12)];
+    await signIn(app);
+    const [before] = await installationRows();
+
+    const suspendedAt = new Date("2026-11-20T08:00:00Z");
+    gh.installations = [{ ...installation(11, "enes-renamed"), suspendedAt }];
+    await signIn(app);
+
+    const rows = await installationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      installationId: 11,
+      accountLogin: "enes-renamed",
+      suspendedAt,
+    });
+    // Same row, so anything pointing at it keeps working.
+    expect(rows[0]?.id).toBe(before?.id);
+  });
+
+  it("keeps an installation that apps still point at", async () => {
+    const app = makeApp();
+    gh.installations = [installation(11)];
+    await signIn(app);
+    const [row] = await installationRows();
+    const [user] = await dbClient.db.select().from(users);
+    await dbClient.db.insert(apps).values({
+      ownerId: user?.id ?? "",
+      installationRef: row?.id ?? "",
+      name: "demo",
+      subdomain: "demo",
+      repoId: 1,
+      repoFullName: "enes/demo",
+      branch: "main",
+      port: 3000,
+    });
+
+    gh.installations = [];
+    await signIn(app);
+    expect(await installationRows()).toHaveLength(1);
+  });
+
+  it("does not take over an installation another user owns", async () => {
+    const [other] = await dbClient.db
+      .insert(users)
+      .values({ githubId: 2002, login: "other" })
+      .returning();
+    await dbClient.db.insert(githubInstallations).values({
+      installationId: 11,
+      ownerId: other?.id ?? "",
+      accountLogin: "acme",
+      accountType: "Organization",
+    });
+
+    gh.installations = [installation(11, "acme-renamed")];
+    await signIn(makeApp());
+
+    const rows = await installationRows();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ ownerId: other?.id, accountLogin: "acme" });
+  });
+
+  it("does not sign in or write anything when the installation lookup fails", async () => {
+    gh.failInstallations = true;
+    const app = makeApp();
+    const login = await startLogin(app);
+    const res = await callback(app, login).expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/?login_error=github_failed`);
+    expect(await countUsers()).toBe(0);
+    expect(await countSessions()).toBe(0);
+    expect(gh.revoked).toBe(1);
   });
 });
 

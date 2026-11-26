@@ -8,6 +8,7 @@ import { GitHubAuthError, type GitHubAuth } from "../auth/github.js";
 import type { SessionStore } from "../auth/sessions.js";
 import { newToken, pkceChallenge, safeEqual } from "../auth/tokens.js";
 import { upsertUser } from "../auth/users.js";
+import { syncInstallations } from "../github/installations.js";
 import type { Config } from "../config/index.js";
 import { rateLimit } from "../middleware/rate-limit.js";
 import { requireAuth } from "../middleware/session.js";
@@ -103,13 +104,34 @@ export function authRouter(deps: AuthRouteDeps): Router {
         res.clearCookie(names.session, cookieOptions(config.nodeEnv));
       }
 
-      let ghUser;
+      // Everything that needs the user's GitHub token happens inside `withUser`; the token
+      // is revoked on GitHub before the session is opened.
+      let outcome;
       try {
-        ghUser = await deps.github.fetchUser({
-          code: query.data.code,
-          codeVerifier: expected.verifier,
-          redirectUri,
-        });
+        outcome = await deps.github.withUser(
+          {
+            code: query.data.code,
+            codeVerifier: expected.verifier,
+            redirectUri,
+            onRevokeFailed: (reason) => {
+              req.log.warn({ reason }, "could not revoke the GitHub user token");
+            },
+          },
+          async (github) => {
+            const ghUser = github.user;
+            // Allow list by numeric ID: logins can be renamed and then claimed by someone
+            // else. Nothing is fetched or stored for an account that is not on it.
+            if (!config.allowedGithubIds.has(String(ghUser.id))) {
+              req.log.warn({ githubId: ghUser.id }, "sign-in rejected: not on the allow list");
+              return null;
+            }
+            // Fetched before any write, so a GitHub failure leaves the database untouched.
+            const installations = await github.installations();
+            const user = await upsertUser(deps.db, ghUser, now());
+            const sync = await syncInstallations(deps.db, user.id, installations);
+            return { user, sync };
+          },
+        );
       } catch (error) {
         if (error instanceof GitHubAuthError) {
           req.log.warn({ reason: error.reason }, "github sign-in failed");
@@ -118,22 +140,19 @@ export function authRouter(deps: AuthRouteDeps): Router {
         }
         throw error;
       }
-
-      // Allow list by numeric ID: logins can be renamed and then claimed by someone else.
-      if (!config.allowedGithubIds.has(String(ghUser.id))) {
-        req.log.warn({ githubId: ghUser.id }, "sign-in rejected: not on the allow list");
+      if (!outcome) {
         backToPanel(res, "not_allowed");
         return;
       }
 
-      const user = await upsertUser(deps.db, ghUser, now());
+      const { user, sync } = outcome;
       const { token } = await sessions.create(user.id);
       res.cookie(
         names.session,
         token,
         cookieOptions(config.nodeEnv, config.sessionTtlHours * 60 * 60 * 1000),
       );
-      req.log.info({ userId: user.id, githubId: user.githubId }, "signed in");
+      req.log.info({ userId: user.id, githubId: user.githubId, installations: sync }, "signed in");
       backToPanel(res);
     },
   );
