@@ -2,7 +2,7 @@ import type { CurrentUser } from "@liman/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, Outlet, useNavigate } from "react-router";
 import { logout } from "../api/endpoints";
-import { ME_QUERY_KEY } from "../queryClient";
+import { forgetUser } from "../queryClient";
 import { ErrorMessage } from "./Status";
 
 export function Layout({ user }: { user: CurrentUser }) {
@@ -10,10 +10,8 @@ export function Layout({ user }: { user: CurrentUser }) {
   const navigate = useNavigate();
   const signOut = useMutation({
     mutationFn: logout,
-    onSuccess: () => {
-      // Forget everything cached for this user, then show the sign-in page.
-      client.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_QUERY_KEY[0] });
-      client.setQueryData(ME_QUERY_KEY, null);
+    onSuccess: async () => {
+      await forgetUser(client);
       void navigate("/", { replace: true });
     },
   });

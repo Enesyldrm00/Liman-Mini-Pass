@@ -11,10 +11,20 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
   return failureCount < 2;
 }
 
+/**
+ * Drops everything cached for the signed-in user and shows the sign-in page. In-flight
+ * requests are cancelled first, so a late `/api/me` answer cannot bring the user back.
+ */
+export async function forgetUser(client: QueryClient): Promise<void> {
+  await client.cancelQueries();
+  client.removeQueries({ predicate: (query) => query.queryKey[0] !== ME_QUERY_KEY[0] });
+  client.setQueryData(ME_QUERY_KEY, null);
+}
+
 export function createQueryClient(options: { retry?: boolean } = {}): QueryClient {
   const client: QueryClient = new QueryClient({
     // A 401 anywhere means the session ended (expired, revoked, user removed from the
-    // allow list); dropping the user sends the panel back to the sign-in page.
+    // allow list); forgetting the user sends the panel back to the sign-in page.
     queryCache: new QueryCache({ onError: signOutOn401 }),
     mutationCache: new MutationCache({ onError: signOutOn401 }),
     defaultOptions: {
@@ -30,7 +40,7 @@ export function createQueryClient(options: { retry?: boolean } = {}): QueryClien
 
   function signOutOn401(error: unknown): void {
     if (isUnauthenticated(error)) {
-      client.setQueryData(ME_QUERY_KEY, null);
+      void forgetUser(client);
     }
   }
 
