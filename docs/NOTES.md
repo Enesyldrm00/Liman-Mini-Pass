@@ -59,3 +59,14 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - `POST /api/apps` (Faz 1) senkronla aynı anda çalışırsa RESTRICT hatası girişi 500'e düşürebilir; o zaman test edilmeli. App oluşturma da repo erişimini `findInstalledRepo` ile kontrol etmeli, ID ile doğrudan sorgu yetmez.
   - Kurulum bilgisi yalnızca giriş anındaki kadar güncel; askıya alma/kaldırma bir sonraki girişe kadar görünmüyor (uçlar 409/404 dönüyor). Webhook senkronu 1.2'de.
   - Faz kapanışında ROADMAP §10 durum kodlarına 502 `upstream_failed` ve askıdaki kurulum için 409 eklenecek (onaylandı).
+
+### 0.9 Panel iskeleti
+
+- Panel React + Vite + TanStack Query + Tailwind ile kuruldu; router React Router (declarative mode), testler Vitest + jsdom + Testing Library (ADR-0019). Oturum kapısı router'ın dışında: `App` önce `/api/me`'ye bakıyor, 401'de hangi yolda olunursa olunsun giriş sayfası çıkıyor. Giriş hatası `?login_error=` sorgusundan okunuyor, yalnızca bilinen kodlar gösteriliyor.
+- İstekler panelle aynı origin'e gidiyor (Traefik `/api`'yi API'ye yönlendiriyor), bu yüzden CORS ve yeni env değişkeni yok; çıkıştaki POST'ta Origin kontrolünü tarayıcının kendi başlığı geçiyor. Her cevap `@liman/shared` şemasıyla doğrulanıyor; Vite shared'ı `liman-source` koşuluyla kaynaktan paketliyor. Kurulum yoksa `installUrl`'ye giden "Install on GitHub" ekranı, varsa kurulum başına "Load more"lu repo listesi var; askıdaki kurulum için repo isteği hiç atılmıyor.
+- İnceleme iki gerçek hata buldu, ikisi de düzeltildi: compose `watch` shared'ı web konteynerine taşımıyordu; arka planda yenileme hata verince yüklü liste hata kutusuyla değişiyordu (artık liste kalıyor, üstte uyarı çıkıyor; yeniden bağlanınca otomatik yenileme kapalı). Ayrıca 401 ve çıkışta önce havadaki istekler iptal ediliyor, sonra önbellek temizleniyor; geç gelen bir `/api/me` kullanıcıyı geri getiremiyor (bunu bir race testi doğruluyor).
+- **Kırılgan noktalar:**
+  - Clickjacking koruması yok: kardeş subdomain'deki bir uygulama paneli iframe'e koyup tıklatabilir, Origin kontrolü bunu durdurmaz. 0.9'da tek düğme "Sign out"; Faz 1'deki ilk durum değiştiren düğmeyle `frame-ancestors 'none'` gelmeli (park alanında).
+  - HMR istemci portu 80'e sabit; Vite host'ta doğrudan çalıştırılınca `/api` erişilemez, panel compose stack'iyle geliştiriliyor.
+  - `apiErrorSchema` katı enum: API, shared'dan önce yeni bir hata kodu dönerse panel mesajı okuyamaz ve genel hata gösterir. Şemalar birlikte güncellenmeli.
+  - Repo sayfalaması GitHub'ın offset sayfalaması; sayfalar arasında kayma olabilir, panel id'ye göre tekilleştiriyor ama bir repo arada kaybolabilir.
