@@ -4,6 +4,7 @@ import { createApp } from "./app.js";
 import { createGitHubAuth } from "./auth/github.js";
 import { createSessionStore } from "./auth/sessions.js";
 import { loadConfig, type Config } from "./config/index.js";
+import { createGitHubApp } from "./github/app.js";
 import { createLogger } from "./logger.js";
 import { createRedis } from "./redis.js";
 import { apiRoutes } from "./routes/index.js";
@@ -42,6 +43,7 @@ const app = createApp({
     db: dbClient.db,
     redis,
     github: createGitHubAuth(config.github),
+    githubApp: createGitHubApp(config.github),
     sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
   }),
 });
