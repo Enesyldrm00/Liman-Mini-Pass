@@ -1,5 +1,6 @@
 import { githubInstallations, type Database } from "@liman/db";
 import {
+  MAX_CURSOR_PAGE,
   cursorSchema,
   type ApiError,
   type BranchPage,
@@ -23,7 +24,7 @@ export interface GitHubRouteDeps {
 const setupQuerySchema = z.object({
   installation_id: z
     .string()
-    .regex(/^[1-9][0-9]{0,15}$/)
+    .regex(/^[1-9][0-9]{0,14}$/)
     .optional(),
   setup_action: z.enum(["install", "update", "request"]).optional(),
 });
@@ -31,9 +32,10 @@ const setupQuerySchema = z.object({
 const installationParamsSchema = z.object({ id: z.uuid() });
 const repoParamsSchema = z.object({
   id: z.uuid(),
+  // At most 15 digits, so the number stays exact (below Number.MAX_SAFE_INTEGER).
   repoId: z
     .string()
-    .regex(/^[1-9][0-9]{0,15}$/)
+    .regex(/^[1-9][0-9]{0,14}$/)
     .transform(Number),
 });
 const pageQuerySchema = z.object({ cursor: cursorSchema.optional() });
@@ -52,8 +54,10 @@ function currentUserId(req: Request): string {
   return id;
 }
 
-function toCursorPage<T>(page: GitHubPage<T>, current: number) {
-  return { items: page.items, nextCursor: page.hasNext ? String(current + 1) : null };
+/** Never hands out a cursor that `cursorSchema` would reject on the next request. */
+export function toCursorPage<T>(page: GitHubPage<T>, current: number) {
+  const hasNext = page.hasNext && current < MAX_CURSOR_PAGE;
+  return { items: page.items, nextCursor: hasNext ? String(current + 1) : null };
 }
 
 export function githubRouter(deps: GitHubRouteDeps): Router {
@@ -140,6 +144,9 @@ export function githubRouter(deps: GitHubRouteDeps): Router {
       if (error.reason === "installation_token_http_404") {
         // Uninstalled on GitHub; the row goes at the next sign-in (webhooks in 1.2).
         sendError(res, 404, "not_found", "Installation no longer exists on GitHub");
+      } else if (error.reason === "installation_token_http_403") {
+        // Suspended on GitHub since the last sign-in; `suspended_at` catches up then.
+        sendError(res, 409, "conflict", "Installation is suspended on GitHub");
       } else if (error.reason === "installation_repos_too_many") {
         sendError(
           res,

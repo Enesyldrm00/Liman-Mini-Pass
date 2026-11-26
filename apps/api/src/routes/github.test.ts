@@ -8,7 +8,7 @@ import { Writable } from "node:stream";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
 import { createDb, githubInstallations, runMigrations, users, type DbClient } from "@liman/db";
-import { apiErrorSchema, repoPageSchema } from "@liman/shared";
+import { MAX_CURSOR_PAGE, apiErrorSchema, branchPageSchema, repoPageSchema } from "@liman/shared";
 import { sql } from "drizzle-orm";
 import { Redis } from "ioredis";
 import request from "supertest";
@@ -19,6 +19,7 @@ import { createSessionStore } from "../auth/sessions.js";
 import type { Config } from "../config/index.js";
 import { createGitHubApp } from "../github/app.js";
 import { createLogger } from "../logger.js";
+import { toCursorPage } from "./github.js";
 import { apiRoutes } from "./index.js";
 
 const PUBLIC_URL = "http://liman.localhost";
@@ -65,7 +66,15 @@ const github: {
   tokenRequests: number;
   /** Answer every repository call with this status instead. */
   failWith: number | null;
-} = { installations: new Map(), tokens: new Map(), tokenRequests: 0, failWith: null };
+  /** Installations suspended on GitHub: token requests answer 403. */
+  suspended: Set<number>;
+} = {
+  installations: new Map(),
+  tokens: new Map(),
+  tokenRequests: 0,
+  failWith: null,
+  suspended: new Set(),
+};
 
 const PAGE_SIZE = 100;
 
@@ -117,6 +126,9 @@ const fakeFetch: typeof fetch = (input, init) => {
     const installationId = Number(tokenMatch[1]);
     if (!github.installations.has(installationId)) {
       return answer({ message: "Not Found" }, 404);
+    }
+    if (github.suspended.has(installationId)) {
+      return answer({ message: "This installation has been suspended" }, 403);
     }
     github.tokenRequests += 1;
     const token = `ghs_secret_${String(installationId)}_${String(github.tokenRequests)}`;
@@ -258,6 +270,7 @@ beforeEach(async () => {
   github.tokens.clear();
   github.tokenRequests = 0;
   github.failWith = null;
+  github.suspended.clear();
   logLines = [];
 });
 
@@ -376,6 +389,19 @@ describe("GET /api/github/installations/:id/repos", () => {
     await get(makeApp(), `/api/github/installations/${row.id}/repos`, cookie).expect(409);
   });
 
+  it("answers 409 when GitHub suspended the installation after the last sign-in", async () => {
+    const { user, cookie } = await userWithSession();
+    const row = await addInstallation(user.id, 11); // not suspended in Liman's row
+    github.installations.set(11, [fakeRepo(1)]);
+    github.suspended.add(11);
+    const res = await get(makeApp(), `/api/github/installations/${row.id}/repos`, cookie).expect(
+      409,
+    );
+    expect(apiErrorSchema.parse(res.body).error.message).toBe(
+      "Installation is suspended on GitHub",
+    );
+  });
+
   it("answers 404 when the App was uninstalled on GitHub", async () => {
     const { user, cookie } = await userWithSession();
     const row = await addInstallation(user.id, 11); // GitHub does not know 11
@@ -459,11 +485,69 @@ describe("GET /api/github/installations/:id/repos/:repoId/branches", () => {
     expect(github.tokenRequests).toBe(0);
   });
 
+  it("pages through branches", async () => {
+    const app = makeApp();
+    const { user, cookie } = await userWithSession();
+    const row = await addInstallation(user.id, 11);
+    github.installations.set(11, [
+      fakeRepo(
+        5,
+        Array.from({ length: 120 }, (_, i) => `b${String(i)}`),
+      ),
+    ]);
+    const path = `/api/github/installations/${row.id}/repos/5/branches`;
+
+    const first = branchPageSchema.parse((await get(app, path, cookie).expect(200)).body);
+    expect(first.items).toHaveLength(100);
+    expect(first.nextCursor).toBe("2");
+    const second = branchPageSchema.parse(
+      (await get(app, `${path}?cursor=2`, cookie).expect(200)).body,
+    );
+    expect(second.items.map((b) => b.name)).toEqual(
+      Array.from({ length: 20 }, (_, i) => `b${String(i + 100)}`),
+    );
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("answers 502 when the repository lookup fails on GitHub", async () => {
+    const { user, cookie } = await userWithSession();
+    const row = await addInstallation(user.id, 11);
+    github.installations.set(11, [fakeRepo(5)]);
+    github.failWith = 503;
+    const res = await get(
+      makeApp(),
+      `/api/github/installations/${row.id}/repos/5/branches`,
+      cookie,
+    ).expect(502);
+    expect(apiErrorSchema.parse(res.body).error.code).toBe("upstream_failed");
+  });
+
+  it("answers 400 for a repository ID too large to be exact", async () => {
+    const { user, cookie } = await userWithSession();
+    const row = await addInstallation(user.id, 11);
+    await get(
+      makeApp(),
+      `/api/github/installations/${row.id}/repos/9007199254740993/branches`,
+      cookie,
+    ).expect(400);
+  });
+
   it("answers 400 for a malformed repository ID", async () => {
     const { user, cookie } = await userWithSession();
     const row = await addInstallation(user.id, 11);
     await get(makeApp(), `/api/github/installations/${row.id}/repos/abc/branches`, cookie).expect(
       400,
     );
+  });
+});
+
+describe("toCursorPage", () => {
+  it("points at the next page while there is one", () => {
+    expect(toCursorPage({ items: [1], hasNext: true }, 3)).toEqual({ items: [1], nextCursor: "4" });
+    expect(toCursorPage({ items: [1], hasNext: false }, 3).nextCursor).toBeNull();
+  });
+
+  it("stops at the last page a cursor can address", () => {
+    expect(toCursorPage({ items: [], hasNext: true }, MAX_CURSOR_PAGE).nextCursor).toBeNull();
   });
 });

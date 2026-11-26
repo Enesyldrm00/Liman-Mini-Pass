@@ -16,6 +16,9 @@ export function cursorPageSchema<T extends z.ZodType>(item: T) {
  */
 export const cursorSchema = z.string().regex(/^[1-9][0-9]{0,2}$/, "Invalid cursor");
 
+/** The highest page a cursor can point at; must match {@link cursorSchema}. */
+export const MAX_CURSOR_PAGE = 999;
+
 /** A GitHub App installation the signed-in user owns in Liman. */
 export const installationSchema = z.object({
   /** Liman's id, used in `/api/github/installations/:id/...`. */
