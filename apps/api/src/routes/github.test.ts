@@ -139,13 +139,19 @@ const fakeFetch: typeof fetch = (input, init) => {
   }
   const repoMatch = /^\/repositories\/(\d+)$/.exec(url.pathname);
   if (repoMatch) {
-    const repo = repos.find((r) => r.id === Number(repoMatch[1]));
+    // Like GitHub: any token can read any public repository by ID.
+    const repo = [...github.installations.values()]
+      .flat()
+      .find((r) => r.id === Number(repoMatch[1]) && !r.private);
     return repo ? answer(repoBody(repo)) : answer({ message: "Not Found" }, 404);
   }
   const branchMatch = /^\/repos\/([^/]+)\/([^/]+)\/branches$/.exec(url.pathname);
   if (branchMatch) {
     const fullName = `${decodeURIComponent(branchMatch[1] ?? "")}/${decodeURIComponent(branchMatch[2] ?? "")}`;
-    const repo = repos.find((r) => r.full_name === fullName);
+    // Like GitHub: public repositories are readable with any token.
+    const repo = [...github.installations.values()]
+      .flat()
+      .find((r) => r.full_name === fullName && (!r.private || repos.includes(r)));
     if (!repo) {
       return answer({ message: "Not Found" }, 404);
     }
@@ -424,12 +430,13 @@ describe("GET /api/github/installations/:id/repos/:repoId/branches", () => {
     });
   });
 
-  it("answers 404 for a repository outside the installation", async () => {
+  it("answers 404 for a public repository outside the installation", async () => {
     const app = makeApp();
     const { user, cookie } = await userWithSession();
     const mine = await addInstallation(user.id, 11);
     github.installations.set(11, [fakeRepo(5)]);
-    github.installations.set(12, [fakeRepo(6)]); // someone else's installation
+    // Public and in another installation: GitHub would serve it to installation 11's token.
+    github.installations.set(12, [fakeRepo(6)]);
 
     const res = await get(
       app,

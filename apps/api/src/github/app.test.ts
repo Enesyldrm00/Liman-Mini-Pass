@@ -1,6 +1,6 @@
 import { generateKeyPairSync, verify } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { GitHubApiError, createGitHubApp } from "./app.js";
+import { GitHubApiError, MAX_REPO_SCAN_PAGES, createGitHubApp } from "./app.js";
 
 const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const NOW = new Date("2026-11-26T12:00:00Z");
@@ -168,16 +168,62 @@ describe("listRepos", () => {
   });
 });
 
-describe("getRepo", () => {
-  it("returns the repository by its ID", async () => {
-    const { gh, calls } = app(() => Response.json(repo(5)));
-    expect(await gh.getRepo(7, 5)).toMatchObject({ id: 5, fullName: "enes/repo-5" });
-    expect(calls.at(-1)?.url).toBe("https://api.github.com/repositories/5");
+describe("findInstalledRepo", () => {
+  /** An installation with `count` repositories (IDs 1…count), served 100 per page. */
+  function installationWith(count: number) {
+    return app((call) => {
+      const page = Number(new URL(call.url).searchParams.get("page"));
+      const ids = Array.from({ length: count }, (_, i) => i + 1).slice(
+        (page - 1) * 100,
+        page * 100,
+      );
+      const last = page * 100 >= count;
+      return Response.json(
+        { total_count: count, repositories: ids.map(repo) },
+        {
+          headers: last
+            ? {}
+            : { link: `<https://api.github.com/x?page=${String(page + 1)}>; rel="next"` },
+        },
+      );
+    });
+  }
+
+  const repoCalls = (calls: Call[]) => calls.filter((call) => !isTokenCall(call));
+
+  it("finds a repository in the installation's own list, on a later page", async () => {
+    const { gh, calls } = installationWith(250);
+    expect(await gh.findInstalledRepo(7, 205)).toMatchObject({
+      id: 205,
+      fullName: "enes/repo-205",
+    });
+    expect(repoCalls(calls).map((call) => call.url)).toEqual(
+      [1, 2, 3].map(
+        (page) =>
+          `https://api.github.com/installation/repositories?per_page=100&page=${String(page)}`,
+      ),
+    );
   });
 
-  it("returns null when the installation cannot see it", async () => {
-    const { gh } = app(() => new Response(null, { status: 404 }));
-    expect(await gh.getRepo(7, 5)).toBeNull();
+  it("stops at the first page that has it", async () => {
+    const { gh, calls } = installationWith(250);
+    await gh.findInstalledRepo(7, 5);
+    expect(repoCalls(calls)).toHaveLength(1);
+  });
+
+  it("returns null for a repository outside the installation, never asking for it by ID", async () => {
+    // GitHub would answer GET /repositories/:id with 200 for any public repository.
+    const { gh, calls } = installationWith(3);
+    expect(await gh.findInstalledRepo(7, 2325298)).toBeNull();
+    expect(repoCalls(calls).some((call) => call.url.includes("/repositories/"))).toBe(false);
+  });
+
+  it("gives up past the page limit instead of scanning forever", async () => {
+    const { gh, calls } = installationWith(5000);
+    await expect(gh.findInstalledRepo(7, 4999)).rejects.toMatchObject({
+      reason: "installation_repos_too_many",
+    });
+    expect(repoCalls(calls)).toHaveLength(MAX_REPO_SCAN_PAGES);
   });
 });
 

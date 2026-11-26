@@ -15,6 +15,9 @@ export const TOKEN_REFRESH_BEFORE_MS = 5 * 60 * 1000;
 /** GitHub's maximum page size for the list endpoints used here. */
 const PER_PAGE = 100;
 
+/** `findInstalledRepo` scans at most this many pages of the installation's repositories. */
+export const MAX_REPO_SCAN_PAGES = 10;
+
 export interface GitHubPage<T> {
   readonly items: T[];
   readonly hasNext: boolean;
@@ -23,8 +26,13 @@ export interface GitHubPage<T> {
 export interface GitHubApp {
   /** Repositories the installation can access, one page (1-based) at a time. */
   listRepos(installationId: number, page: number): Promise<GitHubPage<Repo>>;
-  /** The repository if this installation can access it, otherwise null. */
-  getRepo(installationId: number, repoId: number): Promise<Repo | null>;
+  /**
+   * The repository if it is one of the installation's repositories, otherwise null.
+   * Looked up in the installation's own list: an installation token can also read any
+   * public repository, so `GET /repositories/:id` answering 200 proves nothing. Fails
+   * with `installation_repos_too_many` past {@link MAX_REPO_SCAN_PAGES} pages.
+   */
+  findInstalledRepo(installationId: number, repoId: number): Promise<Repo | null>;
   listBranches(
     installationId: number,
     repoFullName: string,
@@ -150,26 +158,31 @@ export function createGitHubApp(options: GitHubAppOptions): GitHubApp {
 
   const pageQuery = (page: number) => `per_page=${String(PER_PAGE)}&page=${String(page)}`;
 
-  return {
-    async listRepos(installationId, page) {
-      const response = await get(
-        installationId,
-        "repos",
-        `/installation/repositories?${pageQuery(page)}`,
-      );
-      const body = parse(repoListSchema, await readJson(response, "repos", fail), "repos");
-      return { items: body.repositories.map(toRepo), hasNext: hasNextPage(response) };
-    },
+  async function listRepos(installationId: number, page: number): Promise<GitHubPage<Repo>> {
+    const response = await get(
+      installationId,
+      "repos",
+      `/installation/repositories?${pageQuery(page)}`,
+    );
+    const body = parse(repoListSchema, await readJson(response, "repos", fail), "repos");
+    return { items: body.repositories.map(toRepo), hasNext: hasNextPage(response) };
+  }
 
-    async getRepo(installationId, repoId) {
-      const response = await get(installationId, "repo", `/repositories/${String(repoId)}`);
-      // GitHub answers 404 both for a missing repository and for one this installation
-      // cannot see, which is exactly the access check needed here.
-      if (response.status === 404) {
-        await response.body?.cancel().catch(() => undefined);
-        return null;
+  return {
+    listRepos,
+
+    async findInstalledRepo(installationId, repoId) {
+      for (let page = 1; page <= MAX_REPO_SCAN_PAGES; page += 1) {
+        const result = await listRepos(installationId, page);
+        const repo = result.items.find((item) => item.id === repoId);
+        if (repo) {
+          return repo;
+        }
+        if (!result.hasNext) {
+          return null;
+        }
       }
-      return toRepo(parse(repoResponseSchema, await readJson(response, "repo", fail), "repo"));
+      throw fail("installation_repos_too_many");
     },
 
     async listBranches(installationId, repoFullName, page) {

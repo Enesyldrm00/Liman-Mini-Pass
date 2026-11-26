@@ -140,6 +140,13 @@ export function githubRouter(deps: GitHubRouteDeps): Router {
       if (error.reason === "installation_token_http_404") {
         // Uninstalled on GitHub; the row goes at the next sign-in (webhooks in 1.2).
         sendError(res, 404, "not_found", "Installation no longer exists on GitHub");
+      } else if (error.reason === "installation_repos_too_many") {
+        sendError(
+          res,
+          409,
+          "conflict",
+          "Installation has too many repositories; select fewer on GitHub",
+        );
       } else {
         sendError(res, 502, "upstream_failed", "GitHub request failed");
       }
@@ -184,10 +191,10 @@ export function githubRouter(deps: GitHubRouteDeps): Router {
       return;
     }
     const { installationId } = installation;
-    // Looking the repository up with this installation's token is the access check: GitHub
-    // answers 404 for a repository the installation cannot see.
+    // The access check: the repository must be in the installation's own list. A direct
+    // lookup by ID would also succeed for any public repository (ADR-0002).
     const repo = await callGitHub(req, res, async () => ({
-      found: await githubApp.getRepo(installationId, params.data.repoId),
+      found: await githubApp.findInstalledRepo(installationId, params.data.repoId),
     }));
     if (!repo) {
       return;

@@ -124,7 +124,7 @@ const fakeGitHub: GitHubAuth = {
 /** These tests never list repositories; the App client is covered in github.test.ts. */
 const unusedGitHubApp: GitHubApp = {
   listRepos: () => Promise.reject(new Error("not used")),
-  getRepo: () => Promise.reject(new Error("not used")),
+  findInstalledRepo: () => Promise.reject(new Error("not used")),
   listBranches: () => Promise.reject(new Error("not used")),
 };
 
