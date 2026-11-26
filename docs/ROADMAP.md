@@ -984,6 +984,7 @@ ADR'ler Türkçe yazılır ve şu başlıkları içerir: Bağlam, Karar, Elenen 
 | 0016 | 4 | Wildcard TLS: DNS-01 |
 | 0017 | 4 | Yedekleme ve geri yükleme |
 | 0018 | 0 | Veritabanı katmanı: ayrı paket, text + CHECK, node-postgres |
+| 0019 | 0 | Panel: yönlendirme, API istemcisi ve test ortamı |
 
 ---
 
