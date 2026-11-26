@@ -29,6 +29,7 @@ import {
 import { createSessionStore } from "../auth/sessions.js";
 import { hashToken, pkceChallenge } from "../auth/tokens.js";
 import type { Config } from "../config/index.js";
+import type { GitHubApp } from "../github/app.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
 
@@ -120,6 +121,13 @@ const fakeGitHub: GitHubAuth = {
   },
 };
 
+/** These tests never list repositories; the App client is covered in github.test.ts. */
+const unusedGitHubApp: GitHubApp = {
+  listRepos: () => Promise.reject(new Error("not used")),
+  getRepo: () => Promise.reject(new Error("not used")),
+  listBranches: () => Promise.reject(new Error("not used")),
+};
+
 beforeEach(async () => {
   await dbClient.db.execute(sql`truncate users, sessions, github_installations, apps cascade`);
   await redis.flushall();
@@ -163,6 +171,7 @@ function makeApp(config: Config = makeConfig()) {
       db: dbClient.db,
       redis,
       github: fakeGitHub,
+      githubApp: unusedGitHubApp,
       sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
     }),
   });
@@ -470,6 +479,36 @@ describe("installation sync on sign-in", () => {
     expect(await countUsers()).toBe(0);
     expect(await countSessions()).toBe(0);
     expect(gh.revoked).toBe(1);
+  });
+});
+
+describe("App setup return", () => {
+  it("sends the browser through sign-in instead of trusting installation_id", async () => {
+    const app = makeApp();
+    const res = await request(app)
+      .get("/api/github/setup")
+      .query({ installation_id: "999", setup_action: "install" })
+      .expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/api/auth/github/login`);
+    expect(await installationRows()).toHaveLength(0);
+  });
+
+  it("stores only what GitHub reports, not the installation_id from the query", async () => {
+    const app = makeApp();
+    await request(app).get("/api/github/setup").query({ installation_id: "999" }).expect(302);
+    gh.installations = [installation(11)];
+    await signIn(app);
+
+    const rows = await installationRows();
+    expect(rows.map((row) => row.installationId)).toEqual([11]);
+  });
+
+  it("redirects even with a malformed query", async () => {
+    const res = await request(makeApp())
+      .get("/api/github/setup")
+      .query({ installation_id: "<script>", setup_action: "x" })
+      .expect(302);
+    expect(res.headers.location).toBe(`${PUBLIC_URL}/api/auth/github/login`);
   });
 });
 
