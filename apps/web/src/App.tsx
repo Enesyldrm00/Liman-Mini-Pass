@@ -1,6 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
+import { Route, Routes } from "react-router";
 import { fetchMe } from "./api/endpoints";
+import { Layout } from "./components/Layout";
 import { ErrorMessage, Loading } from "./components/Status";
+import { HomePage } from "./pages/HomePage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { SignInPage } from "./pages/SignInPage";
 import { ME_QUERY_KEY } from "./queryClient";
 
@@ -21,5 +25,12 @@ export function App() {
   if (me.data === null) {
     return <SignInPage />;
   }
-  return <p className="p-6">Signed in as {me.data.login}</p>;
+  return (
+    <Routes>
+      <Route element={<Layout user={me.data} />}>
+        <Route index element={<HomePage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
+  );
 }
