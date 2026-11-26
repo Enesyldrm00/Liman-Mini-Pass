@@ -8,6 +8,7 @@ export const ERROR_CODES = [
   "not_found", // 404
   "conflict", // 409: subdomain taken, build not cancellable
   "rate_limited", // 429
+  "upstream_failed", // 502: GitHub did not answer, or answered with something unusable
   "internal", // 500
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
