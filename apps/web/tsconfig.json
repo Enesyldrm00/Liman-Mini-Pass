@@ -3,7 +3,15 @@
   "compilerOptions": {
     "composite": false,
     "declaration": false,
-    "noEmit": true
+    "noEmit": true,
+    // The panel runs in the browser and is bundled by Vite, not Node.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client", "node"],
+    // Resolve workspace packages to their TypeScript sources (see vite.config.ts).
+    "customConditions": ["liman-source"]
   },
   "include": ["src", "vitest.config.ts", "vite.config.ts"]
 }
