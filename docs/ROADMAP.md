@@ -117,6 +117,7 @@ Ek — Yeni sohbet için bağlam
 - Build cache (katman önbelleği)
 - PR başına önizleme deployment'ı
 - Panelden subdomain değiştirme
+- GitHub'a giden uçlarda (`/api/github/installations/:id/...`) kullanıcı başına hız sınırı (ör. dakikada 60); hatalı bir panel döngüsü kurulumun saatlik GitHub kotasını tüketmesin (0.8 güvenlik denetimi)
 - Webhook tekrar koruması: delivery ID'ye ek olarak `(repo_id, after SHA)` üzerinden idempotency; aynı commit için ikinci push build'i açılmaz (`X-GitHub-Delivery` imzanın kapsamında değil, smee üzerinden tekrar oynatma riski — 0.6 güvenlik denetimi)
 
 **Bilinçli olarak kabul edilen sınırlamalar** (ADR'lerde yazılır):
