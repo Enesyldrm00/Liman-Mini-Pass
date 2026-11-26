@@ -154,6 +154,8 @@ services:
     develop:
       watch:
         - { action: sync, path: ../../apps/web, target: /repo/apps/web, ignore: [node_modules/] }
+        # Vite bundles @liman/shared from source (ADR-0019).
+        - { action: sync, path: ../../packages/shared/src, target: /repo/packages/shared/src }
         - { action: rebuild, path: ../../pnpm-lock.yaml }
 
 secrets:
