@@ -919,7 +919,7 @@ Ayrı repo, basit bir Node HTTP sunucusu:
 
 ### 16.1 Temel kural
 
-**Commit tarihleri gerçektir.** Geçmiş yeniden yazılmaz, tarih ayarlanmaz, main'e force push yapılmaz. Geçmiş, işin gerçekten nasıl ilerlediğini gösterir.
+**Commit tarihleri gerçektir.** Geçmiş yeniden yazılmaz, tarih ayarlanmaz, main'e force push yapılmaz. Geçmiş, işin gerçekten nasıl ilerlediğini gösterir: main'de alt bölüm başına bir squash commit'i, ayrıntılı adımlar ise o alt bölümün PR'ında.
 
 ### 16.2 Neden alt bölüm başına bir oturum?
 
@@ -935,7 +935,10 @@ Claude Code kodu hızlı yazar, ama her alt bölüm gözden geçirilebilir olmal
    - **Why** — neden böyle; ilgili ADR
    - **How tested** — hangi testler, hangi komut
    - **Türkçe özet** — Claude Code yazar; 3–5 satırda ne yapıldı ve neden. Mülakat hazırlığının ham malzemesi budur
-5. **Merge:** CI yeşilse Claude Code merge eder. **Merge commit** kullanılır, squash yapılmaz; ayrıntılı commit geçmişi korunur.
+5. **Merge:** CI yeşilse Claude Code **squash merge** eder ve dalı siler; main'de her alt bölüm tek commit olarak görünür. Repo ayarlarında yalnızca squash açıktır. Mesaj GitHub'ın varsayılanına bırakılmaz, `gh pr merge --squash --subject … --body …` ile verilir:
+   - **Konu:** Conventional Commits, İngilizce, sonunda alt bölüm no'su; ör. `feat(api): GitHub installations and repo listing (0.8)`
+   - **Gövde:** PR'daki önemli maddeler, kısa bir liste; son satır `Closes #<issue>`
+   - Dal içindeki küçük commit'ler PR'da kalır; main'e tek tek girmez.
 
 ### 16.4 Sürümler
 
@@ -945,7 +948,7 @@ Claude Code kodu hızlı yazar, ama her alt bölüm gözden geçirilebilir olmal
 
 ### 16.5 Şeffaflık
 
-README'de kısa bir **"How this was built"** bölümü olur: Claude Code'un eşli programlama aracı olarak kullanıldığı, mimari kararların ADR'lerde belgelendiği ve her parçanın anlatılabileceği yazılır. Mülakatta "bunu sen mi yazdın?" sorusunun en güçlü cevabı budur: kararları ve nedenlerini anlatabilmek.
+README'de kısa bir **"How this was built"** bölümü olur: Claude Code'un eşli programlama aracı olarak kullanıldığı, mimari kararların ADR'lerde belgelendiği ve her parçanın anlatılabileceği yazılır. Mülakatta "bunu sen mi yazdın?" sorusunun en güçlü cevabı budur: kararları ve nedenlerini anlatabilmek. Commit'lere ve PR'lara Claude için co-author ya da "Generated with" satırı eklenmez (`.claude/settings.json` → `attribution`).
 
 ### 16.6 Claude Code için yasaklar
 
