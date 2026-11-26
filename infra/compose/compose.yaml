@@ -96,6 +96,10 @@ services:
       <<: *dev-env
       PORT: "3000"
       LIMAN_PUBLIC_URL: http://liman.localhost
+      # The key path in .env points at the host; inside the container it is the secret below.
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app_key
+    # Mounted read-only under /run/secrets, never copied into the image.
+    secrets: [github_app_key]
     depends_on:
       postgres:
         condition: service_healthy
@@ -151,6 +155,11 @@ services:
       watch:
         - { action: sync, path: ../../apps/web, target: /repo/apps/web, ignore: [node_modules/] }
         - { action: rebuild, path: ../../pnpm-lock.yaml }
+
+secrets:
+  # GitHub App private key (docs/github-app-setup.md). The stack does not start without it.
+  github_app_key:
+    file: ../../secrets/app.pem
 
 networks:
   # Liman's own services. User apps never join this network.
