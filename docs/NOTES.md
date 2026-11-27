@@ -117,6 +117,6 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 - 0.1–0.3 için eksik olan taslak notlar git geçmişinden ve PR özetlerinden yazıldı. Faz 0 bölümünün derlenmesi `/faz-kapat 0`'a bırakıldı; skill zaten taslakları faz bölümüne işleyip siliyor.
 - İnceleme, dokümanları kodla karşılaştırırken iki gerçek hata buldu ve ikisi de bu dalda düzeltildi: `.npmrc`'deki `engine-strict` pnpm 12'de etkisizdi (artık `pnpm-workspace.yaml`'da `engineStrict`), api'nin `watch` listesinde `packages/db/src` yoktu. Güvenlik denetimi Traefik panelinin konteyner ağında açık olduğunu gösterdi; Faz 1 için park alanına eklendi.
 - **Kırılgan noktalar:**
-  - Geliştirme imajı `.npmrc` olmadan bu oturumda derlenemedi (Docker Desktop kapalıydı) ve CI bu imajı derlemiyor; `pnpm stack:up` ile elle denenmeli.
+  - CI geliştirme imajını derlemiyor; `dev.Dockerfile` ya da compose değişince `pnpm stack:up` ile elle denenmeli (0.11'de `.npmrc` kaldırıldıktan sonra denendi: imaj derlendi, bütün servisler sağlıklı).
   - README'deki faz tablosu elle güncelleniyor; faz kapanışlarında unutulmamalı.
   - README'deki Uygulama Sözleşmesi ROADMAP Bölüm 3'ün kopyası; biri değişirse diğeri de değişmeli.
