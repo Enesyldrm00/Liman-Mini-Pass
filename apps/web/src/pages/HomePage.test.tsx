@@ -12,33 +12,32 @@ const personal = {
   accountType: "User",
   suspended: false,
 };
-const org = {
-  id: "9a8b7c6d-5e4f-4a3b-9c2d-1e0f9a8b7c6d",
-  installationId: 1002,
-  accountLogin: "octo-org",
-  accountType: "Organization",
-  suspended: false,
-};
-const reposPath = (id: string, cursor?: string) =>
-  `GET /api/github/installations/${id}/repos${cursor ? `?cursor=${cursor}` : ""}`;
 
-function repo(id: number, fullName: string, isPrivate = false) {
+function app(i: number, extra = {}) {
   return {
-    id,
-    name: fullName.split("/")[1] ?? fullName,
-    fullName,
-    private: isPrivate,
-    defaultBranch: "main",
+    id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+    name: `App ${String(i)}`,
+    subdomain: `app-${String(i)}`,
+    url: `http://app-${String(i)}.localhost`,
+    installationId: personal.id,
+    repoId: i,
+    repoFullName: `octocat/app-${String(i)}`,
+    branch: "main",
+    port: 3000,
+    healthPath: "/",
+    status: "active",
+    createdAt: "2026-11-27T10:00:00.000Z",
+    updatedAt: "2026-11-27T10:00:00.000Z",
+    ...extra,
   };
 }
 
 function signedIn(routes: Routes) {
-  return stubFetch({ "GET /api/me": { body: testUser }, ...routes });
-}
-
-function renderAppWith(routes: Routes) {
-  signedIn(routes);
-  return renderApp();
+  return stubFetch({
+    "GET /api/me": { body: testUser },
+    "GET /api/github/installations": { body: { installations: [personal], installUrl } },
+    ...routes,
+  });
 }
 
 describe("home page", () => {
@@ -54,145 +53,62 @@ describe("home page", () => {
     );
   });
 
-  it("lists the repositories of each installation", async () => {
+  it("lists the user's apps with their status and links to them", async () => {
     signedIn({
-      "GET /api/github/installations": { body: { installations: [personal, org], installUrl } },
-      [reposPath(personal.id)]: {
-        body: { items: [repo(1, "octocat/hello", true)], nextCursor: null },
+      "GET /api/apps": {
+        body: { items: [app(1), app(2, { status: "deleting" })], nextCursor: null },
       },
-      [reposPath(org.id)]: { body: { items: [repo(2, "octo-org/site")], nextCursor: null } },
     });
     renderApp();
 
-    const mine = await screen.findByRole("region", { name: "octocat" });
-    expect(await within(mine).findByText("octocat/hello")).toBeInTheDocument();
-    expect(within(mine).getByText("Private")).toBeInTheDocument();
-    expect(within(mine).getByText("main")).toBeInTheDocument();
-
-    const theirs = screen.getByRole("region", { name: /octo-org/ });
-    expect(await within(theirs).findByText("octo-org/site")).toBeInTheDocument();
-    expect(within(theirs).getByText("Public")).toBeInTheDocument();
-    expect(within(theirs).getByText("Organization")).toBeInTheDocument();
-
+    const link = await screen.findByRole("link", { name: "App 1" });
+    expect(link).toHaveAttribute("href", `/apps/${app(1).id}`);
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0] as HTMLElement).getByText("Active")).toBeInTheDocument();
+    expect(within(rows[1] as HTMLElement).getByText("Deleting")).toBeInTheDocument();
+    expect(screen.getByText("octocat/app-1 · main")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "New app" })).toHaveAttribute("href", "/apps/new");
     expect(
       screen.getByRole("link", { name: "Install on another account or change repository access" }),
     ).toHaveAttribute("href", installUrl);
   });
 
-  it("loads the next page with the cursor and appends it", async () => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: { body: { items: [repo(1, "octocat/one")], nextCursor: "2" } },
-      [reposPath(personal.id, "2")]: {
-        body: { items: [repo(2, "octocat/two")], nextCursor: null },
-      },
-    });
+  it("says when there are no apps yet", async () => {
+    signedIn({ "GET /api/apps": { body: { items: [], nextCursor: null } } });
     renderApp();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    expect(await screen.findByText("octocat/two")).toBeInTheDocument();
-    expect(screen.getByText("octocat/one")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+    expect(await screen.findByText(/No apps yet/)).toBeInTheDocument();
   });
 
-  it("keeps loaded repositories when the next page fails", async () => {
+  it("loads more apps with the cursor", async () => {
     signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: { body: { items: [repo(1, "octocat/one")], nextCursor: "2" } },
-      [reposPath(personal.id, "2")]: apiError(502, "upstream_failed"),
+      "GET /api/apps": { body: { items: [app(1)], nextCursor: "YXBwLTE" } },
+      "GET /api/apps?cursor=YXBwLTE": { body: { items: [app(2)], nextCursor: null } },
     });
     renderApp();
-
     await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    expect(await screen.findByText("Could not load repositories from GitHub.")).toBeInTheDocument();
-    expect(screen.getByText("octocat/one")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "App 2" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "App 1" })).toBeInTheDocument();
+  });
+
+  it("offers Try again when the app list fails", async () => {
+    signedIn({ "GET /api/apps": apiError(500, "internal") });
+    renderApp();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load your apps.");
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
-  it("recovers with Try again after the next page failed", async () => {
-    let failures = 1;
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: { body: { items: [repo(1, "octocat/one")], nextCursor: "2" } },
-      [reposPath(personal.id, "2")]: () =>
-        failures-- > 0
-          ? apiError(502, "upstream_failed")
-          : { body: { items: [repo(2, "octocat/two")], nextCursor: null } },
-    });
-    renderApp();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
-    expect(await screen.findByText("octocat/two")).toBeInTheDocument();
-    expect(screen.getByText("octocat/one")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("does not offer Try again when the next page cannot succeed", async () => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: { body: { items: [repo(1, "octocat/one")], nextCursor: "2" } },
-      [reposPath(personal.id, "2")]: apiError(
-        409,
-        "conflict",
-        "Installation is suspended on GitHub",
-      ),
-    });
-    renderApp();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Installation is suspended on GitHub",
-    );
-    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
-    expect(screen.getByText("octocat/one")).toBeInTheDocument();
-  });
-
-  it("shows a repository only once when it shifts onto the next page", async () => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: {
-        body: { items: [repo(1, "octocat/one"), repo(2, "octocat/two")], nextCursor: "2" },
-      },
-      [reposPath(personal.id, "2")]: {
-        body: { items: [repo(2, "octocat/two"), repo(3, "octocat/three")], nextCursor: null },
-      },
-    });
-    renderApp();
-
-    await userEvent.click(await screen.findByRole("button", { name: "Load more" }));
-    await screen.findByText("octocat/three");
-    expect(screen.getAllByText("octocat/two")).toHaveLength(1);
-  });
-
-  it("keeps the repositories on screen when a refresh fails", async () => {
+  it("keeps the page when refreshing the installations fails", async () => {
     let healthy = true;
-    const { client } = renderAppWith({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: () =>
-        healthy
-          ? { body: { items: [repo(1, "octocat/one")], nextCursor: null } }
-          : apiError(502, "upstream_failed"),
-    });
-    await screen.findByText("octocat/one");
-
-    healthy = false;
-    await act(() => client.refetchQueries({ queryKey: ["repos"] }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Could not refresh this list; showing the last one.",
-    );
-    expect(screen.getByText("octocat/one")).toBeInTheDocument();
-  });
-
-  it("keeps the installations on screen when a refresh fails", async () => {
-    let healthy = true;
-    const { client } = renderAppWith({
+    stubFetch({
+      "GET /api/me": { body: testUser },
       "GET /api/github/installations": () =>
         healthy
-          ? { body: { installations: [{ ...personal, suspended: true }], installUrl } }
+          ? { body: { installations: [personal], installUrl } }
           : apiError(502, "upstream_failed"),
+      "GET /api/apps": { body: { items: [app(1)], nextCursor: null } },
     });
-    await screen.findByRole("region", { name: "octocat" });
+    const { client } = renderApp();
+    await screen.findByRole("link", { name: "App 1" });
 
     healthy = false;
     await act(() => client.refetchQueries({ queryKey: ["installations"] }));
@@ -201,72 +117,11 @@ describe("home page", () => {
         "Could not refresh your GitHub installations; showing the last list.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "octocat" })).toBeInTheDocument();
-  });
-
-  it("links to sign-in when the installation is gone", async () => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: apiError(404, "not_found"),
-    });
-    renderApp();
-    expect(await screen.findByRole("link", { name: "Sign in again" })).toHaveAttribute(
-      "href",
-      "/api/auth/github/login",
-    );
-  });
-
-  it("does not ask for repositories of a suspended installation", async () => {
-    const mock = signedIn({
-      "GET /api/github/installations": {
-        body: { installations: [{ ...personal, suspended: true }], installUrl },
-      },
-    });
-    renderApp();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "This installation is suspended on GitHub.",
-    );
-    expect(
-      mock.mock.calls.some(([input]) => typeof input === "string" && input.includes("/repos")),
-    ).toBe(false);
-  });
-
-  it("says there are no repositories yet", async () => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: { body: { items: [], nextCursor: null } },
-    });
-    renderApp();
-    expect(
-      await screen.findByText("No repositories are shared with this installation yet."),
-    ).toBeInTheDocument();
-  });
-
-  it.each([
-    [
-      apiError(409, "conflict", "Installation has too many repositories; select fewer on GitHub"),
-      "Installation has too many repositories; select fewer on GitHub",
-      false,
-    ],
-    [
-      apiError(404, "not_found"),
-      "This installation no longer exists on GitHub. Sign in again to refresh.",
-      false,
-    ],
-    [apiError(502, "upstream_failed"), "Could not load repositories from GitHub.", true],
-  ])("explains a failed repository list (%#)", async (response, message, canRetry) => {
-    signedIn({
-      "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [reposPath(personal.id)]: response,
-    });
-    renderApp();
-    expect(await screen.findByRole("alert")).toHaveTextContent(message);
-    expect(screen.queryByRole("button", { name: "Try again" }) !== null).toBe(canRetry);
+    expect(screen.getByRole("link", { name: "App 1" })).toBeInTheDocument();
   });
 
   it("returns to the sign-in page when the session ends", async () => {
-    signedIn({ "GET /api/github/installations": apiError(401, "unauthenticated") });
+    signedIn({ "GET /api/apps": apiError(401, "unauthenticated") });
     renderApp();
     expect(await screen.findByRole("link", { name: "Sign in with GitHub" })).toBeInTheDocument();
   });

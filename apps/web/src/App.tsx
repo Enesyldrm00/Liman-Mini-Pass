@@ -3,7 +3,9 @@ import { Route, Routes } from "react-router";
 import { fetchMe } from "./api/endpoints";
 import { Layout } from "./components/Layout";
 import { ErrorMessage, Loading } from "./components/Status";
+import { AppPage } from "./pages/AppPage";
 import { HomePage } from "./pages/HomePage";
+import { NewAppPage } from "./pages/NewAppPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SignInPage } from "./pages/SignInPage";
 import { ME_QUERY_KEY } from "./queryClient";
@@ -29,6 +31,8 @@ export function App() {
     <Routes>
       <Route element={<Layout user={me.data} />}>
         <Route index element={<HomePage />} />
+        <Route path="apps/new" element={<NewAppPage />} />
+        <Route path="apps/:id" element={<AppPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

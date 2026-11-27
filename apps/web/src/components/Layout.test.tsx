@@ -52,7 +52,7 @@ describe("layout", () => {
     stubFetch({
       "GET /api/me": { body: testUser },
       "GET /api/github/installations": { body: { installations: [personal], installUrl } },
-      [`GET /api/github/installations/${personal.id}/repos`]: apiError(401, "unauthenticated"),
+      "GET /api/apps": apiError(401, "unauthenticated"),
     });
     const { client } = renderApp();
     expect(await screen.findByRole("link", { name: "Sign in with GitHub" })).toBeInTheDocument();
