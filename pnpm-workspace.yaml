@@ -10,3 +10,6 @@ allowBuilds:
   cpu-features: false
   protobufjs: false
   ssh2: false
+
+# Refuse to install on a Node version outside "engines" (pnpm 12 ignores this key in .npmrc).
+engineStrict: true

@@ -12,7 +12,7 @@ USER node
 WORKDIR /repo
 
 # Install dependencies first so this layer is cached until a manifest changes.
-COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY --chown=node:node package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY --chown=node:node apps/api/package.json apps/api/
 COPY --chown=node:node apps/worker/package.json apps/worker/
 COPY --chown=node:node apps/web/package.json apps/web/
