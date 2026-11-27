@@ -121,6 +121,7 @@ services:
       watch:
         - { action: sync, path: ../../apps/api/src, target: /repo/apps/api/src }
         - { action: sync, path: ../../packages/shared/src, target: /repo/packages/shared/src }
+        - { action: sync, path: ../../packages/db/src, target: /repo/packages/db/src }
         - { action: rebuild, path: ../../pnpm-lock.yaml }
 
   worker:

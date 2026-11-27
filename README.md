@@ -1,8 +1,32 @@
 # Liman
 
+[![CI](https://github.com/Enesyldrm00/Liman-Mini-Pass/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Enesyldrm00/Liman-Mini-Pass/actions/workflows/ci.yml)
+
 A small self-hosted PaaS: push to GitHub, Liman builds the image, deploys it and serves it on its own subdomain.
 
 > Work in progress. The full plan lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+
+## How it works
+
+1. You sign in with GitHub, install the Liman GitHub App and pick a repository and branch.
+2. A `push` to that branch reaches the API as a signed webhook. The API records a build and queues it.
+3. The worker clones the commit, builds an image with the repository's `Dockerfile` and pushes it to Liman's registry.
+4. The worker starts the new version, waits for its health check and only then moves traffic to it. If the check fails, the old version keeps running.
+5. The app is served at `<subdomain>.<your-domain>`. Build logs stream live to the panel.
+
+PostgreSQL is the source of truth for every state change; Redis carries the job queue and live logs.
+
+## Status
+
+| Phase | What                                                       | Version  | State       |
+| ----- | ---------------------------------------------------------- | -------- | ----------- |
+| 0     | Skeleton: monorepo, local stack, GitHub sign-in, repo list | `v0.1.0` | In progress |
+| 1     | Build and deploy with Docker                               | `v0.2.0` | Planned     |
+| 2     | Kubernetes (k3s), isolated builds                          | `v0.3.0` | Planned     |
+| 3     | Observability, Helm, self-deploy                           | `v0.4.0` | Planned     |
+| 4     | Live on a VPS with TLS and backups                         | `v1.0.0` | Planned     |
+
+Today the panel signs you in and lists your repositories; builds and deploys arrive in Phase 1.
 
 ## Requirements
 
@@ -62,3 +86,22 @@ pnpm --filter @liman/db migrate                    # apply migrations (uses DATA
 ```
 
 In the local stack the one-shot `migrate` service applies them before api and worker start.
+
+## App contract
+
+A repository deployed on Liman must follow these rules:
+
+- A `Dockerfile` at the repository root (no buildpacks).
+- The app listens on `0.0.0.0:$PORT`, not `127.0.0.1`. Liman sets `PORT` to the port configured for the app.
+- The health path (default `/`) returns 200–399 once the app is ready; traffic only moves to a healthy version.
+- On `SIGTERM` the app shuts down cleanly within 25 seconds.
+- The app is stateless; the container disk is lost on restart.
+- Secrets are not needed at build time; environment variables are given only at runtime.
+- It fits within 256 MB of memory and 0.5 CPU by default.
+
+## Documentation
+
+- [`docs/ROADMAP.md`](docs/ROADMAP.md): scope, architecture, state machines and the phase plan (Turkish)
+- [`docs/adr/`](docs/adr/): architecture decision records (Turkish)
+- [`docs/NOTES.md`](docs/NOTES.md): phase notes and known weak spots (Turkish)
+- [`docs/github-app-setup.md`](docs/github-app-setup.md): creating the development GitHub App

@@ -4,6 +4,34 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 
 ## Taslak notlar
 
+### 0.1 Monorepo
+
+- pnpm workspace: `apps/api`, `apps/worker`, `apps/web`, `packages/shared` (0.4'te `packages/db` eklendi). Node 26 `.nvmrc` + `engines` + `engineStrict` ile, pnpm `packageManager` ile sabit; bağımlılıklar `^` olmadan tam sürümle yazılıyor. Kurulum betikleri varsayılan olarak kapalı, yalnızca `allowBuilds`'teki esbuild çalışıyor (ADR-0001).
+- TypeScript strict tek bir `tsconfig.base.json`'dan geliyor (`noUncheckedIndexedAccess` dahil). ESLint flat config `strictTypeChecked` kullanıyor ve `any` hata veriyor. Vitest kökte `projects` ile her paketi kendi ortamında çalıştırıyor. Ortak betikler kökte.
+- **Kırılgan noktalar:**
+  - `tsbuildinfo` dosyaları ilk commit'lerde yanlışlıkla repoya girdi, 0.2'de `.gitignore`'a eklendi. Yeni bir derleme çıktısı türü eklenirse önce ignore'a bakılmalı.
+  - Sabit sürümleri güncelleyen bir otomasyon yok. CI'daki `pnpm audit --prod --audit-level high` yalnızca üretim bağımlılıklarındaki high/critical açıkları haber veriyor; dev bağımlılıkları denetlenmiyor.
+  - `engine-strict` 0.1'de `.npmrc`'ye yazılmıştı ama pnpm 12 onu okumuyor: yanlış Node sürümünde kurulum yalnızca uyarı verip devam ediyordu. 0.11'de `pnpm-workspace.yaml`'a `engineStrict` olarak taşındı (elle denendi: önce exit 0, sonra exit 1). pnpm ayarları artık `pnpm-workspace.yaml`'da; `.npmrc` yalnızca kimlik bilgileri içindir.
+
+### 0.2 Ortak paket
+
+- `@liman/shared`: durum sabitleri ve tipleri (build, deployment, app, log akışı; API'nin ve worker'ın iptal edebileceği durumlar ayrı listeler), subdomain doğrulayıcı, env anahtar/değer şemaları ve standart API hata biçimi. Hem Node'da hem tarayıcıda çalışıyor; bu yüzden env değer sınırı (32 KB) `Buffer` ile değil `TextEncoder` ile byte olarak ölçülüyor.
+- Subdomain doğrulayıcı hata fırlatmıyor, sebep kodu dönüyor (`empty`, `too_long`, `invalid_chars`, `leading_or_trailing_hyphen`, `punycode_prefix`, `reserved`). Aynı kodu API 400 cevabında, panel form mesajında kullanabilecek. `xn--` önekli adlar reddediliyor, çünkü punycode bir etiket başka bir adın benzeri gibi görünebilir.
+- Geliştirmede shared kaynaktan okunuyor (`liman-source` export koşulu), build gerekmiyor (ADR-0001).
+- **Kırılgan noktalar:**
+  - Durum listeleri hem TypeScript'te hem DB `CHECK` kısıtlarında var (0.4). Liste değişince migration da üretilmeli.
+
+### 0.3 Yerel ortam
+
+- `pnpm stack:up` tek komutla postgres, redis, registry, traefik, api, worker, web ve tek seferlik `migrate` servisini ayağa kaldırıyor. api ve worker, postgres ve redis sağlıklı olana ve `migrate` başarıyla bitene kadar başlamıyor.
+- İki ağ: `liman-internal` Liman servisleri için, `liman-apps` ileride kullanıcı uygulamaları, Traefik ve worker için. Uygulamalar `liman-internal`'daki servislere erişemeyecek; Traefik ise iki ağda da (aşağıdaki kırılgan noktaya bakın). Dışarı açık tek port Traefik'in 80'i; postgres (5433), redis, registry ve Traefik paneli host'ta yalnızca `127.0.0.1`'e bağlı.
+- api, worker, web ve migrate aynı geliştirme imajını kullanıyor; bağımlılıklar imajda Linux için kurulu. Kod bind mount yerine `docker compose watch` ile senkronlanıyor, çünkü Windows'ta bind mount dosya değişikliklerini konteynere bildirmiyor. Konteynerler `node` kullanıcısıyla çalışıyor.
+- **Kırılgan noktalar:**
+  - Traefik Docker socket'ini `:ro` ile bağlıyor, ama `:ro` Docker API çağrılarını kısıtlamaz: socket'e erişen her süreç host'ta fiilen root'tur. Faz 1'de worker da socket'e erişecek (ADR-0006).
+  - `127.0.0.1:8080` bağlaması yalnızca host'tan erişimi sınırlıyor. Traefik paneli `api.insecure: true` ile konteyner ağında kimlik doğrulamasız açık; Faz 1'de `liman-apps`'e katılan bir uygulama `traefik:8080/api/rawdata`'dan bütün yönlendirme yapılandırmasını okuyabilir. İlk uygulama gelmeden kapatılmalı (park alanında, 0.11 güvenlik denetimi).
+  - Yeni bir paket eklenince `dev.Dockerfile`'daki `package.json` kopyalama satırları ve compose `watch` listesi elle güncellenmeli. 0.4'te db için `watch` satırı unutulmuştu, 0.11'de eklendi.
+  - `*.localhost` adını tarayıcılar kendiliğinden çözüyor, Node ve bazı curl sürümleri çözmeyebiliyor; gerekirse hosts dosyası.
+
 ### 0.4 Veritabanı
 
 - Bölüm 7'deki 9 tablo `packages/db` paketinde Drizzle ile yazıldı. Paket yalnızca api ve worker için; panel `pg`'yi görmüyor. Tek migration var (`0000_init.sql`), compose'daki `migrate` servisi bunu uyguluyor (ADR-0018).
@@ -81,3 +109,14 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
   - `audit` npm'in advisory servisine bağlı; servis kesilirse bütün merge'ler bloklanır. Kodla ilgisiz yeni bir açık da PR'ı kırmızıya düşürebilir; istisna `--ignore` ile ve gerekçesi `ci.yml`'ye yazılarak verilir.
   - Job adları (`check`, `audit`) dal korumasında birebir geçiyor; değişirse koruma da güncellenmeli. İzin listesinde olmayan yeni bir action önce repo ayarına eklenmeli.
   - Strict yüzünden main ilerleyince açık PR'lar `BEHIND` olur ve CI yeniden çalışır.
+
+### 0.11 Dokümantasyon
+
+- ADR-0001 (monorepo ve teknoloji seçimi) yazıldı; 0.1–0.3'te verilen ama kayda geçmemiş kararları topluyor: pnpm workspaces, sabit sürümler, `liman-source` koşulu, tek lint/test yapılandırması, Express 5, tek geliştirme imajı ve `compose watch`, iki ağ. ADR-0002, 0003, 0018–0020 zaten alt bölümlerinde yazılmıştı.
+- README iskeleti tamamlandı: CI rozeti, "How it works", faz durumu tablosu, Uygulama Sözleşmesi (Bölüm 3 README'de de olmalı) ve doküman linkleri. Mimari şema, ekran görüntüleri ve ölçümler Faz 1'deki README v1'e kaldı.
+- 0.1–0.3 için eksik olan taslak notlar git geçmişinden ve PR özetlerinden yazıldı. Faz 0 bölümünün derlenmesi `/faz-kapat 0`'a bırakıldı; skill zaten taslakları faz bölümüne işleyip siliyor.
+- İnceleme, dokümanları kodla karşılaştırırken iki gerçek hata buldu ve ikisi de bu dalda düzeltildi: `.npmrc`'deki `engine-strict` pnpm 12'de etkisizdi (artık `pnpm-workspace.yaml`'da `engineStrict`), api'nin `watch` listesinde `packages/db/src` yoktu. Güvenlik denetimi Traefik panelinin konteyner ağında açık olduğunu gösterdi; Faz 1 için park alanına eklendi.
+- **Kırılgan noktalar:**
+  - CI geliştirme imajını derlemiyor; `dev.Dockerfile` ya da compose değişince `pnpm stack:up` ile elle denenmeli (0.11'de `.npmrc` kaldırıldıktan sonra denendi: imaj derlendi, bütün servisler sağlıklı).
+  - README'deki faz tablosu elle güncelleniyor; faz kapanışlarında unutulmamalı.
+  - README'deki Uygulama Sözleşmesi ROADMAP Bölüm 3'ün kopyası; biri değişirse diğeri de değişmeli.

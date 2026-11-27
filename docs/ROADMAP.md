@@ -126,6 +126,7 @@ Ek — Yeni sohbet için bağlam
 - Testcontainers ve compose imajlarını tag yerine `@sha256:` digest'iyle sabitlemek (0.10 güvenlik denetimi)
 - CI runner'ını `ubuntu-latest` yerine sabit bir sürüme (`ubuntu-24.04`) bağlamak (0.10 güvenlik denetimi)
 - `v*` sürüm etiketleri için ruleset: silme ve taşıma yasak (0.10 güvenlik denetimi)
+- Traefik panelini kullanıcı uygulamalarından kapatmak: `api.insecure: true` paneli ve API'yi konteyner içinde `:8080`'de kimlik doğrulamasız açıyor ve Traefik `liman-apps` ağında. Panel `liman-internal`'a özel bir entrypoint'e taşınmalı ya da `liman-apps` tarafında kapatılmalı; Faz 1'de ilk uygulama bu ağa girmeden (0.11 güvenlik denetimi)
 
 **Bilinçli olarak kabul edilen sınırlamalar** (ADR'lerde yazılır):
 - Faz 1'de uygulamalar Docker ağı üzerinden birbirine erişebilir. Faz 2'de NetworkPolicy ile kapanır.
