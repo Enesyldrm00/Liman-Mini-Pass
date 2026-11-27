@@ -4,7 +4,19 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 
 ## Taslak notlar
 
-_(Faz 1 alt bölümlerinin notları buraya eklenecek.)_
+### 1.1 Uygulama yönetimi
+
+- Uçlar: `GET/POST /api/apps`, `GET/PATCH/DELETE /api/apps/:id`, `GET/PUT /api/apps/:id/env`. Oluştururken kurulumun sahibi, repo (`findInstalledRepo`; ID ile doğrudan sorgu her public repoyu bulur) ve dal (`getBranch`) GitHub'dan kontrol ediliyor; eşleşme için yalnızca `repo_id` kullanılıyor. Subdomain yarışını DB'deki unique kısıt çözüyor (5 eşzamanlı istekten tam biri 201). PATCH yalnızca dal, port ve sağlık yolunu değiştiriyor; ad ve subdomain sabit. Liste subdomain'e göre sıralı, imleç son subdomain (base64url).
+- Env: AES-256-GCM, değer başına rastgele 12 baytlık nonce, `v1:` öneki, AAD = `app_id:key`. Kod `@liman/db`'de, çünkü API yazıyor, worker 1.4'te okuyacak ve panel bu paketi göremiyor. Anahtar açılışta `KeyObject` olarak ayrıştırılıyor; yoksa API başlamıyor. Değerler API'den hiç geri dönmüyor. PUT bütün listeyi alıyor: listede olmayan silinir, değeri boş gelen eski değerini korur (şifreli metni ve `updated_at`'i değişmez), yeni anahtar boş gelirse 400. PUT uygulama satırını `FOR UPDATE` ile kilitliyor; eşzamanlı yazmalar sırayla işleniyor ve sonuç karışık bir liste olmuyor.
+- Silme: koşullu güncelleme `active → deleting`, commit'ten sonra `liman-pipeline` kuyruğuna `cleanup-app` (iş kimliği = app id), 202. Tekrar çağırmak güvenli: `deleting` bir uygulama için iş yeniden eklenir (aynı kimlik, çift iş yok), başarısız iş yeniden denenir. API commit ile kuyruk arasında çökerse silmeyi tekrar etmek yetiyor. İşi işleyecek worker 1.4'te geliyor; o zamana kadar uygulama `deleting`'de bekler ve subdomain dolu kalır.
+- 0.8'den kalan yarış gerçekti ve düzeltildi. Senkron, silinecek kurulumları tek bir `DELETE … WHERE NOT EXISTS (apps)` ile siliyordu. READ COMMITTED'da bu sorgu, aynı anda eklenen uygulamanın commit'ini bekledikten sonra NOT EXISTS'i eski anlık görüntüyle değerlendiriyor, uygulamayı görmüyor ve RESTRICT girişi 23001 ile düşürüyordu. Artık önce satırlar `FOR UPDATE` ile kilitleniyor, DELETE yeni bir sorgu olarak taze anlık görüntüyle çalışıyor; uygulama oluşturma da kurulum satırını `FOR KEY SHARE` ile tutuyor. Düzeltme geri alınınca test 23001 ile kırılıyor.
+- Panel: ana sayfa uygulama listesi oldu. `/apps/new` sihirbazı kurulum → repo → dal → ayrıntılar sırasıyla ilerliyor; ad ve subdomain repo adından öneriliyor, alanlar shared şemalarıyla önceden doğrulanıyor, API'nin alan hataları alanın yanında gösteriliyor. `/apps/:id` ayrıntıları, env düzenleyiciyi (değerler yalnızca yazılır, kayıttan sonra kutular boşalır) ve onaylı silmeyi içeriyor. Park alanından onaylı clickjacking koruması: Traefik middleware'i panel ve API cevaplarına `X-Frame-Options: DENY` ve `frame-ancestors 'none'` ekliyor (curl ile doğrulandı).
+- **Kırılgan noktalar:**
+  - Clickjacking başlıkları yalnızca Traefik'te; API'ye Traefik'siz gelen istek başlıksız döner. Faz 2'de K8s'te Traefik Middleware kaynağı olarak yeniden yazılmalı. Otomatik testi yok, yalnızca curl ile denendi.
+  - `express.json` sınırı rotaya göre değişiyor: env için 6.5 MB, diğerleri için 16 KB. Env router'ı apps router'ından **önce** bağlanmalı, yoksa 16 KB'lık parser env isteğini 413 ile reddeder (bir test bunu yakalıyor).
+  - Tamamlanmış bir `cleanup-app` işi Redis'te durduğu sürece (son 1000 iş) aynı kimlikle yeni iş eklenemez. Uygulama satırı iş bitince silindiği için bugün sorun değil; ama worker satırı silmeden işi başarılı bitirirse silme bir daha tetiklenemez (1.4'te dikkat).
+  - Kurulum kaldırılınca uygulamalara ne olacağı (RESTRICT) 1.2'deki webhook senkronunda karara bağlanacak.
+  - Env değişince çalışan uygulama yenilenmiyor; "Yeniden deploy et" uyarısı 1.5'te geliyor.
 
 ## Faz 0 — İskelet · `v0.1.0`
 
