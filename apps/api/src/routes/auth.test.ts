@@ -8,6 +8,7 @@ import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redi
 import {
   apps,
   createDb,
+  createEnvCipher,
   githubInstallations,
   runMigrations,
   sessions,
@@ -33,6 +34,7 @@ import type { GitHubApp } from "../github/app.js";
 import { syncInstallations } from "../github/installations.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
+import { unusedPipeline } from "../test/stubs.js";
 
 const PUBLIC_URL = "http://liman.localhost";
 const ALLOWED_ID = 1001;
@@ -177,6 +179,8 @@ function makeApp(config: Config = makeConfig()) {
       github: fakeGitHub,
       githubApp: unusedGitHubApp,
       sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
+      envCipher: createEnvCipher(config.encryptionKey),
+      pipeline: unusedPipeline,
     }),
   });
 }

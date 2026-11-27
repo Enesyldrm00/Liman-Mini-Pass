@@ -1,4 +1,4 @@
-import { createDb } from "@liman/db";
+import { createDb, createEnvCipher } from "@liman/db";
 import { EnvValidationError } from "@liman/shared";
 import { createApp } from "./app.js";
 import { createGitHubAuth } from "./auth/github.js";
@@ -6,6 +6,7 @@ import { createSessionStore } from "./auth/sessions.js";
 import { loadConfig, type Config } from "./config/index.js";
 import { createGitHubApp } from "./github/app.js";
 import { createLogger } from "./logger.js";
+import { createPipelineQueue } from "./queue.js";
 import { createRedis } from "./redis.js";
 import { apiRoutes } from "./routes/index.js";
 
@@ -36,6 +37,8 @@ redis.on("error", (error: Error) => {
   logger.error({ errorMessage: error.message }, "redis connection error");
 });
 
+const pipeline = createPipelineQueue(config.redisUrl);
+
 const app = createApp({
   logger,
   registerRoutes: apiRoutes({
@@ -45,6 +48,8 @@ const app = createApp({
     github: createGitHubAuth(config.github),
     githubApp: createGitHubApp(config.github),
     sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
+    envCipher: createEnvCipher(config.encryptionKey),
+    pipeline,
   }),
 });
 
@@ -59,7 +64,9 @@ const server = app.listen(config.port, "0.0.0.0", (error?: Error) => {
 function shutdown(signal: string): void {
   logger.info({ signal }, "shutting down");
   server.close(() => {
-    void Promise.allSettled([dbClient.close(), redis.quit()]).then(() => process.exit(0));
+    void Promise.allSettled([dbClient.close(), redis.quit(), pipeline.close()]).then(() =>
+      process.exit(0),
+    );
   });
 }
 
