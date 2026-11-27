@@ -55,6 +55,18 @@ export async function syncInstallations(
       eq(githubInstallations.ownerId, ownerId),
       ids.length > 0 ? notInArray(githubInstallations.installationId, ids) : undefined,
     );
+    // Lock the candidate rows first, in a fixed order. An app being created for one of
+    // them holds a key-share lock on it until its transaction ends, so this waits for that
+    // commit. Only then does the DELETE below run, as a new statement with a fresh
+    // snapshot that sees the new app. In one statement the NOT EXISTS would be judged on
+    // the snapshot taken before the wait, miss the app, and the RESTRICT foreign key would
+    // fail the whole sign-in (0.8 note; tested in routes/apps.test.ts).
+    await tx
+      .select({ id: githubInstallations.id })
+      .from(githubInstallations)
+      .where(gone)
+      .orderBy(githubInstallations.installationId)
+      .for("update");
     // `apps.installation_ref` is ON DELETE RESTRICT, so rows with apps must not be deleted
     // here; the condition skips them instead of letting the whole transaction fail.
     const removed = await tx
