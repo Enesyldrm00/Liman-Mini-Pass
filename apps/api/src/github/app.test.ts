@@ -262,3 +262,30 @@ describe("listBranches", () => {
     },
   );
 });
+
+describe("getBranch", () => {
+  it("returns one branch, escaping slashes in its name", async () => {
+    const { gh, calls } = app(() =>
+      Response.json({ name: "feature/login", commit: { sha: "c".repeat(40) } }),
+    );
+    expect(await gh.getBranch(7, "enes/app", "feature/login")).toEqual({
+      name: "feature/login",
+      commitSha: "c".repeat(40),
+    });
+    expect(calls.at(-1)?.url).toBe(
+      "https://api.github.com/repos/enes/app/branches/feature%2Flogin",
+    );
+  });
+
+  it("returns null when the branch does not exist", async () => {
+    const { gh } = app(() => Response.json({ message: "Branch not found" }, { status: 404 }));
+    expect(await gh.getBranch(7, "enes/app", "nope")).toBeNull();
+  });
+
+  it("fails on other GitHub errors", async () => {
+    const { gh } = app(() => Response.json({ message: "boom" }, { status: 500 }));
+    await expect(gh.getBranch(7, "enes/app", "main")).rejects.toMatchObject({
+      reason: "branch_http_500",
+    });
+  });
+});

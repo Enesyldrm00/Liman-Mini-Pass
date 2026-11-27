@@ -127,6 +127,7 @@ const unusedGitHubApp: GitHubApp = {
   listRepos: () => Promise.reject(new Error("not used")),
   findInstalledRepo: () => Promise.reject(new Error("not used")),
   listBranches: () => Promise.reject(new Error("not used")),
+  getBranch: () => Promise.reject(new Error("not used")),
 };
 
 beforeEach(async () => {
