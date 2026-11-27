@@ -41,11 +41,20 @@ export const appPortSchema = z
   .min(1, "Port must be between 1 and 65535")
   .max(65535, "Port must be between 1 and 65535");
 
-/** Path the worker probes for health (Phase 1.4). A path only: no query or fragment. */
+/**
+ * Path the worker probes for health (1.5). A plain path only: no query or fragment, no
+ * leading `//` (against a base URL that names a new host, e.g. `//redis:6379`), and no
+ * `.` or `..` segments.
+ */
 export const healthPathSchema = z
   .string()
   .max(HEALTH_PATH_MAX_LENGTH, "Health path is too long")
-  .regex(/^\/[A-Za-z0-9._~\-/]*$/, "Health path must start with / and contain only a path");
+  .regex(/^\/[A-Za-z0-9._~\-/]*$/, "Health path must start with / and contain only a path")
+  .refine((path) => !path.startsWith("//"), "Health path must not start with //")
+  .refine(
+    (path) => !path.split("/").some((segment) => segment === "." || segment === ".."),
+    "Health path must not contain . or .. segments",
+  );
 
 export const createAppBodySchema = z
   .object({
@@ -77,8 +86,8 @@ export const appSchema = z.object({
   id: z.uuid(),
   name: z.string(),
   subdomain: z.string(),
-  /** Where the app is served, e.g. `http://blog.localhost`. */
-  url: z.string(),
+  /** Where the app is served, e.g. `http://blog.localhost`. The panel puts it in an href. */
+  url: z.url({ protocol: /^https?$/ }),
   installationId: z.uuid(),
   repoId: z.number(),
   /** For display only; matching uses `repoId`. */

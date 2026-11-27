@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appNameSchema,
+  appSchema,
   branchNameSchema,
   createAppBodySchema,
   envPutBodySchema,
@@ -61,16 +62,29 @@ describe("branchNameSchema", () => {
 });
 
 describe("healthPathSchema", () => {
-  it.each(["/", "/healthz", "/api/v1/health", "/_status.json"])("accepts %s", (value) => {
-    expect(healthPathSchema.safeParse(value).success).toBe(true);
-  });
-
-  it.each(["", "healthz", "/health?full=1", "/health#x", "/a b", "/%2e%2e"])(
-    "rejects %j",
+  it.each(["/", "/healthz", "/api/v1/health", "/_status.json", "/a.b/..c"])(
+    "accepts %s",
     (value) => {
-      expect(healthPathSchema.safeParse(value).success).toBe(false);
+      expect(healthPathSchema.safeParse(value).success).toBe(true);
     },
   );
+
+  it.each([
+    "",
+    "healthz",
+    "/health?full=1",
+    "/health#x",
+    "/a b",
+    "/%2e%2e",
+    "//redis:6379",
+    "//postgres/x",
+    "/..",
+    "/a/../b",
+    "/./health",
+    "/a/.",
+  ])("rejects %j", (value) => {
+    expect(healthPathSchema.safeParse(value).success).toBe(false);
+  });
 });
 
 describe("createAppBodySchema", () => {
@@ -121,6 +135,7 @@ describe("envPutBodySchema", () => {
     ["reserved LIMAN_ prefix", [{ key: "LIMAN_X", value: "1" }]],
     ["lower-case key", [{ key: "api_key", value: "1" }]],
     ["key starting with a digit", [{ key: "1A", value: "1" }]],
+    ["key over 128 characters", [{ key: "K".repeat(129), value: "1" }]],
     ["value over 32 KB", [{ key: "A", value: "é".repeat(16 * 1024 + 1) }]],
     [
       "duplicate keys",
@@ -147,4 +162,34 @@ describe("envPutBodySchema", () => {
       "hunter2-secret",
     );
   });
+});
+
+describe("appSchema", () => {
+  const app = {
+    id: "0b6f7c8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f",
+    name: "Blog",
+    subdomain: "blog",
+    url: "http://blog.localhost",
+    installationId: "0b6f7c8e-1d2a-4c3b-9e8f-7a6b5c4d3e2f",
+    repoId: 1,
+    repoFullName: "enes/blog",
+    branch: "main",
+    port: 3000,
+    healthPath: "/",
+    status: "active",
+    createdAt: "2026-11-27T10:00:00.000Z",
+    updatedAt: "2026-11-27T10:00:00.000Z",
+  };
+
+  it("accepts an http(s) url", () => {
+    expect(appSchema.safeParse(app).success).toBe(true);
+    expect(appSchema.safeParse({ ...app, url: "https://blog.example.com" }).success).toBe(true);
+  });
+
+  it.each(["javascript:alert(1)", "data:text/html,x", "blog.localhost"])(
+    "rejects %s, which the panel would put in an href",
+    (url) => {
+      expect(appSchema.safeParse({ ...app, url }).success).toBe(false);
+    },
+  );
 });
