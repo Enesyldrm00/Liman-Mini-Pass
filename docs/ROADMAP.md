@@ -408,7 +408,7 @@ Her geçiş tek bir koşullu güncellemedir: durum, ancak beklenen durumdaysa de
 - Bütün uçlar `/api` altındadır. Sağlık ve metrik uçları bunun dışındadır.
 - Gövdeler ve sorgu parametreleri Zod ile doğrulanır.
 - Hata biçimi her yerde aynıdır: `error` nesnesi içinde `code`, `message` ve isteğe bağlı `details`.
-- Durum kodları: 400 doğrulama · 401 oturum yok · 403 sahibi değil / Origin hatalı · 404 · 409 çakışma (subdomain alınmış, iptal edilemez durum) · 429 hız sınırı.
+- Durum kodları: 400 doğrulama · 401 oturum yok · 403 sahibi değil / Origin hatalı · 404 · 409 çakışma (subdomain alınmış, iptal edilemez durum, GitHub kurulumu askıda) · 429 hız sınırı · 502 `upstream_failed` (GitHub hata verdi ya da erişilemedi).
 - Sayfalama imleç (cursor) tabanlıdır.
 
 | Metot | Yol | Açıklama |
@@ -481,60 +481,60 @@ Her alt bölüm bir dal ve bir PR'dır (Bölüm 16). Her fazın sonunda: ROADMAP
 ### Faz 0 — İskelet · `v0.1.0`
 
 **0.1 Monorepo**
-- [ ] pnpm workspaces: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`
-- [ ] Node sürümünü sabitle; TypeScript strict ortak yapılandırma
-- [ ] ESLint (flat config), Prettier, Vitest kök yapılandırması
-- [ ] Ortak betikler: `dev`, `build`, `lint`, `typecheck`, `test`
+- [x] pnpm workspaces: `apps/api`, `apps/worker`, `apps/web`, `packages/shared`
+- [x] Node sürümünü sabitle; TypeScript strict ortak yapılandırma
+- [x] ESLint (flat config), Prettier, Vitest kök yapılandırması
+- [x] Ortak betikler: `dev`, `build`, `lint`, `typecheck`, `test`
 
 **0.2 Ortak paket**
-- [ ] Durum sabitleri, Zod şemaları, ortak tipler
-- [ ] Subdomain doğrulayıcı ve testleri
+- [x] Durum sabitleri, Zod şemaları, ortak tipler
+- [x] Subdomain doğrulayıcı ve testleri
 
 **0.3 Yerel ortam (`infra/compose`)**
-- [ ] postgres, redis, registry (5000), traefik (80; panel yalnızca 127.0.0.1:8080), api, worker, web
-- [ ] `liman-internal` ve `liman-apps` ağları; kalıcı volume'lar
-- [ ] postgres ve redis için sağlık kontrolleri; api bunları bekler
-- [ ] Migration'lar için tek seferlik `migrate` servisi
+- [x] postgres, redis, registry (5000), traefik (80; panel yalnızca 127.0.0.1:8080), api, worker, web
+- [x] `liman-internal` ve `liman-apps` ağları; kalıcı volume'lar
+- [x] postgres ve redis için sağlık kontrolleri; api bunları bekler
+- [x] Migration'lar için tek seferlik `migrate` servisi
 
 **0.4 Veritabanı**
-- [ ] Drizzle şeması (Bölüm 7, bütün tablolar) ve ilk migration
-- [ ] Kısmi unique index'ler dahil
+- [x] Drizzle şeması (Bölüm 7, bütün tablolar) ve ilk migration
+- [x] Kısmi unique index'ler dahil
 
 **0.5 Yapılandırma ve loglama**
-- [ ] Ortam değişkenleri açılışta Zod ile doğrulanır; eksik ya da hatalı değerde süreç hiç başlamaz
-- [ ] pino ile JSON log, istek kimliği
-- [ ] `.env.example` (Bölüm 15)
+- [x] Ortam değişkenleri açılışta Zod ile doğrulanır; eksik ya da hatalı değerde süreç hiç başlamaz
+- [x] pino ile JSON log, istek kimliği
+- [x] `.env.example` (Bölüm 15)
 
 **0.6 GitHub App**
-- [ ] Geliştirme için ayrı bir App (`liman-dev-06`; `liman-dev` adı GitHub'da alınmıştı)
-- [ ] Yetkiler: Contents (read), Metadata (read). Olaylar: `push`, `installation`, `installation_repositories`
-- [ ] Callback URL, Setup URL ve smee.io webhook URL'si
-- [ ] Kurulum adımları `docs/github-app-setup.md` dosyasında
+- [x] Geliştirme için ayrı bir App (`liman-dev-06`; `liman-dev` adı GitHub'da alınmıştı)
+- [x] Yetkiler: Contents (read), Metadata (read). Olaylar: `push`, `installation`, `installation_repositories`
+- [x] Callback URL, Setup URL ve smee.io webhook URL'si
+- [x] Kurulum adımları `docs/github-app-setup.md` dosyasında
 
 **0.7 Kimlik**
-- [ ] GitHub App kullanıcı yetkilendirmesi ile giriş; `state` doğrulaması
-- [ ] İzin listesi **GitHub kullanıcı ID'si** ile kontrol edilir (login adı değişebilir)
-- [ ] `sessions` tablosu; çerez httpOnly, SameSite=Lax, üretimde Secure ve `__Host-` önekli
-- [ ] Durum değiştiren isteklerde Origin kontrolü (Bölüm 13)
-- [ ] Giriş ucunda hız sınırı
-- [ ] `/api/me`, `/api/auth/logout`
+- [x] GitHub App kullanıcı yetkilendirmesi ile giriş; `state` doğrulaması
+- [x] İzin listesi **GitHub kullanıcı ID'si** ile kontrol edilir (login adı değişebilir)
+- [x] `sessions` tablosu; çerez httpOnly, SameSite=Lax, üretimde Secure ve `__Host-` önekli
+- [x] Durum değiştiren isteklerde Origin kontrolü (Bölüm 13)
+- [x] Giriş ucunda hız sınırı
+- [x] `/api/me`, `/api/auth/logout`
 
 **0.8 Installation ve repolar**
-- [ ] Setup dönüşünde gelen `installation_id`, kullanıcının kurulumları GitHub'dan sorgulanarak doğrulanır
-- [ ] Girişte kurulumlar senkronlanır. Webhook ile senkron Faz 1.2'de gelir
-- [ ] App JWT → installation token; token süresi dolmadan önbellekte tutulur
-- [ ] Repo ve dal listeleme uçları
+- [x] Setup dönüşünde gelen `installation_id`, kullanıcının kurulumları GitHub'dan sorgulanarak doğrulanır
+- [x] Girişte kurulumlar senkronlanır. Webhook ile senkron Faz 1.2'de gelir
+- [x] App JWT → installation token; token süresi dolmadan önbellekte tutulur
+- [x] Repo ve dal listeleme uçları
 
 **0.9 Panel iskeleti**
-- [ ] Giriş sayfası, ana yerleşim, kurulum yoksa "App'i kur" yönlendirmesi, repo listesi
+- [x] Giriş sayfası, ana yerleşim, kurulum yoksa "App'i kur" yönlendirmesi, repo listesi
 
 **0.10 CI**
-- [ ] Her PR'da ve main'de: kurulum (pnpm önbellekli), lint, typecheck, birim testler, build
-- [ ] main dal koruması: PR zorunlu, CI yeşil olmadan merge yok
+- [x] Her PR'da ve main'de: kurulum (pnpm önbellekli), lint, typecheck, birim testler, build
+- [x] main dal koruması: PR zorunlu, CI yeşil olmadan merge yok
 
 **0.11 Dokümantasyon**
-- [ ] ADR-0001, ADR-0002, ADR-0003
-- [ ] NOTES.md'ye Faz 0 bölümü; README iskeleti
+- [x] ADR-0001, ADR-0002, ADR-0003
+- [x] NOTES.md'ye Faz 0 bölümü; README iskeleti
 
 **Bitti tanımı:** `docker compose up` ile her şey ayağa kalkıyor. GitHub ile giriş yapıp App'i kuruyorsun ve repolarını panelde görüyorsun. İzin listesinde olmayan bir hesap giremiyor. CI yeşil.
 

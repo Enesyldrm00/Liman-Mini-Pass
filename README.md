@@ -18,13 +18,13 @@ PostgreSQL is the source of truth for every state change; Redis carries the job 
 
 ## Status
 
-| Phase | What                                                       | Version  | State       |
-| ----- | ---------------------------------------------------------- | -------- | ----------- |
-| 0     | Skeleton: monorepo, local stack, GitHub sign-in, repo list | `v0.1.0` | In progress |
-| 1     | Build and deploy with Docker                               | `v0.2.0` | Planned     |
-| 2     | Kubernetes (k3s), isolated builds                          | `v0.3.0` | Planned     |
-| 3     | Observability, Helm, self-deploy                           | `v0.4.0` | Planned     |
-| 4     | Live on a VPS with TLS and backups                         | `v1.0.0` | Planned     |
+| Phase | What                                                       | Version  | State   |
+| ----- | ---------------------------------------------------------- | -------- | ------- |
+| 0     | Skeleton: monorepo, local stack, GitHub sign-in, repo list | `v0.1.0` | Done    |
+| 1     | Build and deploy with Docker                               | `v0.2.0` | Next    |
+| 2     | Kubernetes (k3s), isolated builds                          | `v0.3.0` | Planned |
+| 3     | Observability, Helm, self-deploy                           | `v0.4.0` | Planned |
+| 4     | Live on a VPS with TLS and backups                         | `v1.0.0` | Planned |
 
 Today the panel signs you in and lists your repositories; builds and deploys arrive in Phase 1.
 
