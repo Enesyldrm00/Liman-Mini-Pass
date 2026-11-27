@@ -14,6 +14,8 @@ export interface EnvRouteDeps {
 /**
  * Body limit for `PUT /env`: 100 values of 32 KB each, plus room for keys and JSON. JSON
  * escaping can grow a value, so the per-value byte check in the schema is the real limit.
+ * A full list of values made mostly of control characters (`\u0000` is 6 bytes escaped)
+ * could still exceed it and get a 413; that is accepted.
  */
 const ENV_BODY_LIMIT = MAX_ENV_VARS * MAX_ENV_VALUE_BYTES * 2;
 
@@ -30,7 +32,7 @@ async function listKeys(db: Database | Tx, appId: string): Promise<EnvList> {
 
 /**
  * Env values are write-only through the API: they are encrypted before they reach the
- * database and never come back out. The worker decrypts them at deploy time (1.4).
+ * database and never come back out. The worker decrypts them at deploy time (1.5).
  */
 export function envRouter(deps: EnvRouteDeps): Router {
   const { db, envCipher } = deps;
@@ -65,12 +67,14 @@ export function envRouter(deps: EnvRouteDeps): Router {
 
     const result = await db.transaction(async (tx) => {
       // Locks the app row: concurrent PUTs for the same app run one after the other, and a
-      // DELETE cannot slip in between the status check and the writes.
+      // DELETE cannot slip in between the status check and the writes. NO KEY UPDATE is
+      // enough for both and, unlike FOR UPDATE, does not block inserts of builds or
+      // deployments whose foreign key only takes a KEY SHARE lock on this row.
       const [locked] = await tx
         .select({ status: apps.status })
         .from(apps)
         .where(eq(apps.id, app.id))
-        .for("update");
+        .for("no key update");
       if (locked?.status !== "active") {
         return "deleting" as const;
       }

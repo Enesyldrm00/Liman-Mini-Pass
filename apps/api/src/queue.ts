@@ -11,16 +11,19 @@ export interface PipelineQueue {
   close(): Promise<void>;
 }
 
+/** ROADMAP section 9: one attempt, and the last 1000 completed jobs are kept. */
+export const PIPELINE_JOB_OPTIONS = {
+  // A failed job is not retried by itself; the user (or a repeated DELETE) triggers it.
+  attempts: 1,
+  removeOnComplete: 1000,
+} as const;
+
 /** Tries once and fails fast, like the API's other Redis client (see redis.ts). */
 export function createPipelineQueue(redisUrl: string): PipelineQueue {
   const queue = new Queue<CleanupAppJob, void, JobName>(PIPELINE_QUEUE, {
     connection: { url: redisUrl, maxRetriesPerRequest: 1, commandTimeout: 2_000 },
     skipWaitingForReady: true,
-    defaultJobOptions: {
-      // One attempt: a failed job is not retried by itself (ROADMAP section 9).
-      attempts: 1,
-      removeOnComplete: 1000,
-    },
+    defaultJobOptions: PIPELINE_JOB_OPTIONS,
   });
   return pipelineQueueFrom(queue);
 }
@@ -31,8 +34,16 @@ export function pipelineQueueFrom(queue: Queue<CleanupAppJob, void, JobName>): P
     async ensureCleanupApp(appId) {
       const existing = await queue.getJob(appId);
       if (existing && (await existing.isFailed())) {
-        await existing.retry();
-        return;
+        try {
+          await existing.retry();
+          return;
+        } catch (error) {
+          // A concurrent DELETE retried it first, so it is no longer failed. If it is
+          // queued again, the `add` below is a no-op; anything else is a real error.
+          if (await existing.isFailed()) {
+            throw error;
+          }
+        }
       }
       // A waiting, active or completed job with this ID makes `add` a no-op.
       await queue.add("cleanup-app", { appId }, { jobId: appId });

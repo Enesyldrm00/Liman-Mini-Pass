@@ -41,7 +41,7 @@ import type { Config } from "../config/index.js";
 import { GitHubApiError, type GitHubApp } from "../github/app.js";
 import { syncInstallations } from "../github/installations.js";
 import { createLogger } from "../logger.js";
-import { pipelineQueueFrom } from "../queue.js";
+import { PIPELINE_JOB_OPTIONS, pipelineQueueFrom } from "../queue.js";
 import { APP_PAGE_SIZE } from "./apps.js";
 import { apiRoutes } from "./index.js";
 
@@ -63,7 +63,10 @@ beforeAll(async () => {
   dbClient = createDb(pgContainer.getConnectionUri());
   await runMigrations(dbClient.db);
   redis = new Redis(redisContainer.getConnectionUrl());
-  queue = new Queue(PIPELINE_QUEUE, { connection: { url: redisContainer.getConnectionUrl() } });
+  queue = new Queue(PIPELINE_QUEUE, {
+    connection: { url: redisContainer.getConnectionUrl() },
+    defaultJobOptions: PIPELINE_JOB_OPTIONS,
+  });
 });
 
 afterAll(async () => {
@@ -77,6 +80,11 @@ afterAll(async () => {
 const github = {
   repos: new Map<number, Repo[]>(),
   branches: new Map<number, string[]>(),
+  /** Branch name → the name GitHub redirects it to (a renamed branch). */
+  renamed: new Map<string, string>(),
+  /** When set, `getBranch` waits for it; `onBranchLookup` fires when the wait starts. */
+  branchGate: null as Promise<void> | null,
+  onBranchLookup: null as (() => void) | null,
   fail: false,
 };
 
@@ -95,10 +103,13 @@ const fakeGitHubApp: GitHubApp = {
     if (github.fail) return Promise.reject(new GitHubApiError("repos_http_500", 500));
     return Promise.resolve(github.repos.get(installationId)?.find((r) => r.id === repoId) ?? null);
   },
-  getBranch(_installationId, fullName, branch): Promise<Branch | null> {
+  async getBranch(_installationId, fullName, branch): Promise<Branch | null> {
+    github.onBranchLookup?.();
+    if (github.branchGate) await github.branchGate;
     const id = Number(fullName.split("-").at(-1));
-    const found = github.branches.get(id)?.includes(branch);
-    return Promise.resolve(found ? { name: branch, commitSha: "a".repeat(40) } : null);
+    const name = github.renamed.get(branch) ?? branch;
+    const found = github.branches.get(id)?.includes(name);
+    return found ? { name, commitSha: "a".repeat(40) } : null;
   },
 };
 
@@ -136,7 +147,7 @@ const config: Config = {
 /** Everything the API logged during the current test. */
 let logLines: string[] = [];
 
-function makeApp() {
+function makeApp(overrides: Partial<Config> = {}) {
   const destination = new Writable({
     write(chunk: Buffer, _encoding, done) {
       logLines.push(chunk.toString());
@@ -146,7 +157,7 @@ function makeApp() {
   return createApp({
     logger: createLogger({ logLevel: "debug" }, destination),
     registerRoutes: apiRoutes({
-      config,
+      config: { ...config, ...overrides },
       db: dbClient.db,
       redis,
       github: unusedAuth,
@@ -227,6 +238,21 @@ async function postApp(app: App, cookie: string, installationId: string, extra =
   return appSchema.parse(res.body);
 }
 
+/**
+ * Waits until another session is blocked on a row lock, so the test knows the concurrent
+ * step really reached the lock instead of finishing early on another path.
+ */
+async function waitUntilSomeoneWaitsForALock(): Promise<void> {
+  for (let i = 0; i < 100; i += 1) {
+    const result = await dbClient.pool.query<{ n: string }>(
+      "select count(*) as n from pg_stat_activity where wait_event_type = 'Lock' and datname = current_database()",
+    );
+    if (Number(result.rows[0]?.n) > 0) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("nobody started waiting for the lock");
+}
+
 const jobsInRedis = async () => {
   const jobs = await queue.getJobs(["waiting", "active", "completed", "failed", "delayed"]);
   return jobs.map((job) => ({ id: job.id, name: job.name, data: job.data }));
@@ -237,6 +263,9 @@ beforeEach(async () => {
   await queue.obliterate({ force: true });
   github.repos.clear();
   github.branches.clear();
+  github.renamed.clear();
+  github.branchGate = null;
+  github.onBranchLookup = null;
   github.fail = false;
   logLines = [];
 });
@@ -388,6 +417,30 @@ describe("POST /api/apps", () => {
     ]);
   });
 
+  it("refuses the panel's own host as a subdomain", async () => {
+    const panel = "http://panel.localhost";
+    const { owner, installation } = await setup();
+    const app = makeApp({ publicUrl: panel });
+    const res = await request(app)
+      .post("/api/apps")
+      .set("Cookie", owner.cookie)
+      .set("Origin", panel)
+      .send(createBody(installation.id, { subdomain: "panel" }))
+      .expect(400);
+    expect(apiErrorSchema.parse(res.body).error.details).toEqual([
+      { path: "subdomain", message: "This name is reserved" },
+    ]);
+    expect(await dbClient.db.$count(apps)).toBe(0);
+  });
+
+  it("refuses a branch GitHub only knows under a new name", async () => {
+    const { app, owner, installation } = await setup();
+    github.renamed.set("old-name", "dev");
+    await write(app, "post", "/api/apps", owner.cookie)
+      .send(createBody(installation.id, { branch: "old-name" }))
+      .expect(400);
+  });
+
   it("lets exactly one of two concurrent requests take a subdomain", async () => {
     const { app, owner, installation } = await setup();
     const results = await Promise.all(
@@ -419,7 +472,7 @@ describe("POST /api/apps", () => {
       );
       // GitHub no longer reports installation 11 for this user.
       const sync = syncInstallations(dbClient.db, owner.user.id, []);
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitUntilSomeoneWaitsForALock();
       await client.query("commit");
       await expect(sync).resolves.toMatchObject({ removed: 0, keptWithApps: 1 });
     } finally {
@@ -439,7 +492,7 @@ describe("POST /api/apps", () => {
       const create = write(app, "post", "/api/apps", owner.cookie)
         .send(createBody(installation.id))
         .then((res) => res);
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await waitUntilSomeoneWaitsForALock();
       await client.query("delete from github_installations where id = $1", [installation.id]);
       await client.query("commit");
       const res = await create;
@@ -538,6 +591,30 @@ describe("PATCH /api/apps/:id", () => {
     const { app, owner, installation } = await setup();
     const created = await postApp(app, owner.cookie, installation.id);
     await write(app, "patch", `/api/apps/${created.id}`, owner.cookie).send(body).expect(400);
+  });
+
+  it("loses to a DELETE that lands while it checks the branch on GitHub", async () => {
+    const { app, owner, installation } = await setup();
+    const created = await postApp(app, owner.cookie, installation.id);
+    let release: () => void = () => undefined;
+    github.branchGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const lookupStarted = new Promise<void>((resolve) => {
+      github.onBranchLookup = resolve;
+    });
+
+    const patch = write(app, "patch", "/api/apps/" + created.id, owner.cookie)
+      .send({ branch: "dev" })
+      .then((res) => res);
+    await lookupStarted;
+    github.branchGate = null;
+    await write(app, "delete", "/api/apps/" + created.id, owner.cookie).expect(202);
+    release();
+
+    expect((await patch).status).toBe(409);
+    const [row] = await dbClient.db.select().from(apps).where(eq(apps.id, created.id));
+    expect(row).toMatchObject({ status: "deleting", branch: "main" });
   });
 
   it("refuses someone else's app", async () => {

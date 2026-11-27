@@ -82,6 +82,15 @@ export async function ownedApp(db: Database, req: Request, res: Response) {
   return row;
 }
 
+/**
+ * True when `<subdomain>.<baseDomain>` is the panel's own host, e.g. `panel` with
+ * `LIMAN_PUBLIC_URL=https://panel.example.com`. The shared reserved list only covers the
+ * default `liman`; an app on the panel host would get the panel's origin and cookies.
+ */
+export function isPanelHost(config: Config, subdomain: string): boolean {
+  return `${subdomain}.${config.baseDomain}` === new URL(config.publicUrl).hostname;
+}
+
 function sendBranchNotFound(res: Response): void {
   sendError(res, 400, "validation_failed", "Branch not found in the repository", [
     { path: "branch", message: "Branch not found in the repository" },
@@ -129,6 +138,12 @@ export function appsRouter(deps: AppRouteDeps): Router {
       return;
     }
     const input = parsed.data;
+    if (isPanelHost(config, input.subdomain)) {
+      sendError(res, 400, "validation_failed", "Invalid app", [
+        { path: "subdomain", message: "This name is reserved" },
+      ]);
+      return;
+    }
     const installation = await ownedInstallation(db, req, res, input.installationId);
     if (!installation) {
       return;
@@ -155,7 +170,8 @@ export function appsRouter(deps: AppRouteDeps): Router {
     if (!branch) {
       return;
     }
-    if (!branch.found) {
+    // GitHub redirects a renamed branch to its new name; only the exact name counts.
+    if (branch.found?.name !== input.branch) {
       sendBranchNotFound(res);
       return;
     }
@@ -249,7 +265,7 @@ export function appsRouter(deps: AppRouteDeps): Router {
       if (!branch) {
         return;
       }
-      if (!branch.found) {
+      if (branch.found?.name !== newBranch) {
         sendBranchNotFound(res);
         return;
       }
