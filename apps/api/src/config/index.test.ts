@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,9 +25,13 @@ const rsaKeyPath = writeKeyFile(
   }),
 );
 
+const encryptionKey = randomBytes(32).toString("base64");
+
 const validEnv = {
   NODE_ENV: "development",
   LIMAN_PUBLIC_URL: "http://liman.localhost/",
+  LIMAN_BASE_DOMAIN: "localhost",
+  LIMAN_ENCRYPTION_KEY: encryptionKey,
   DATABASE_URL: "postgres://liman:liman@localhost:5433/liman",
   REDIS_URL: "redis://localhost:6379",
   LIMAN_ALLOWED_GITHUB_IDS: "12345678, 87654321",
@@ -42,11 +46,14 @@ describe("loadConfig", () => {
   it("returns a frozen, typed config with defaults", () => {
     const config = loadConfig(validEnv);
     const { privateKey, ...github } = config.github;
-    expect({ ...config, github }).toEqual({
+    const { encryptionKey: key, ...rest } = config;
+    expect(key.export().toString("base64")).toBe(encryptionKey);
+    expect({ ...rest, github }).toEqual({
       nodeEnv: "development",
       logLevel: "info",
       port: 3000,
       publicUrl: "http://liman.localhost",
+      baseDomain: "localhost",
       databaseUrl: validEnv.DATABASE_URL,
       redisUrl: validEnv.REDIS_URL,
       allowedGithubIds: new Set(["12345678", "87654321"]),
@@ -79,6 +86,8 @@ describe("loadConfig", () => {
   it.each([
     "NODE_ENV",
     "LIMAN_PUBLIC_URL",
+    "LIMAN_BASE_DOMAIN",
+    "LIMAN_ENCRYPTION_KEY",
     "DATABASE_URL",
     "REDIS_URL",
     "LIMAN_ALLOWED_GITHUB_IDS",
@@ -97,6 +106,11 @@ describe("loadConfig", () => {
     ["LOG_LEVEL", "verbose"],
     ["PORT", "http"],
     ["LIMAN_PUBLIC_URL", "http://liman.localhost/panel"],
+    ["LIMAN_BASE_DOMAIN", "Example.com"],
+    ["LIMAN_BASE_DOMAIN", ".example.com"],
+    ["LIMAN_BASE_DOMAIN", "http://example.com"],
+    ["LIMAN_ENCRYPTION_KEY", randomBytes(16).toString("base64")],
+    ["LIMAN_ENCRYPTION_KEY", randomBytes(32).toString("hex")],
     ["DATABASE_URL", "mysql://db/liman"],
     ["REDIS_URL", "http://localhost:6379"],
     ["LIMAN_ALLOWED_GITHUB_IDS", "octocat"],
@@ -154,6 +168,23 @@ describe("loadConfig", () => {
       expect((error as Error).message).not.toContain("c2VjcmV0");
       expect((error as Error).message).not.toContain(path);
     }
+  });
+
+  it("never puts the encryption key in the error message", () => {
+    const badKey = randomBytes(31).toString("base64");
+    try {
+      loadConfig({ ...validEnv, LIMAN_ENCRYPTION_KEY: badKey });
+      expect.unreachable();
+    } catch (error) {
+      expect((error as Error).message).toMatch(/LIMAN_ENCRYPTION_KEY: Must be base64/);
+      expect((error as Error).message).not.toContain(badKey);
+    }
+  });
+
+  it("accepts a dotted base domain", () => {
+    expect(loadConfig({ ...validEnv, LIMAN_BASE_DOMAIN: "apps.example.com" }).baseDomain).toBe(
+      "apps.example.com",
+    );
   });
 
   it("never puts received values in the error message", () => {

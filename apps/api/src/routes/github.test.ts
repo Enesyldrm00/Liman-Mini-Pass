@@ -3,11 +3,18 @@
  * Postgres and Redis (Testcontainers). The GitHub App client is the real one; only GitHub's
  * HTTP API is faked, and the fake checks the App JWT signature like GitHub would.
  */
-import { generateKeyPairSync, verify } from "node:crypto";
+import { createSecretKey, generateKeyPairSync, randomBytes, verify } from "node:crypto";
 import { Writable } from "node:stream";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
-import { createDb, githubInstallations, runMigrations, users, type DbClient } from "@liman/db";
+import {
+  createDb,
+  createEnvCipher,
+  githubInstallations,
+  runMigrations,
+  users,
+  type DbClient,
+} from "@liman/db";
 import { MAX_CURSOR_PAGE, apiErrorSchema, branchPageSchema, repoPageSchema } from "@liman/shared";
 import { sql } from "drizzle-orm";
 import { Redis } from "ioredis";
@@ -21,6 +28,7 @@ import { createGitHubApp } from "../github/app.js";
 import { createLogger } from "../logger.js";
 import { toCursorPage } from "./github.js";
 import { apiRoutes } from "./index.js";
+import { unusedPipeline } from "../test/stubs.js";
 
 const PUBLIC_URL = "http://liman.localhost";
 const ALLOWED_ID = 1001;
@@ -196,8 +204,10 @@ const config: Config = {
   logLevel: "debug",
   port: 0,
   publicUrl: PUBLIC_URL,
+  baseDomain: "localhost",
   databaseUrl: "unused",
   redisUrl: "unused",
+  encryptionKey: createSecretKey(randomBytes(32)),
   allowedGithubIds: new Set([String(ALLOWED_ID), "2002"]),
   sessionTtlHours: 1,
   github: {
@@ -228,6 +238,8 @@ function makeApp() {
       github: unusedAuth,
       githubApp: createGitHubApp({ appId: APP_ID, privateKey, fetch: fakeFetch }),
       sessions: createSessionStore(dbClient.db, { ttlHours: 1 }),
+      envCipher: createEnvCipher(config.encryptionKey),
+      pipeline: unusedPipeline,
     }),
   });
 }

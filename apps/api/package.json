@@ -21,6 +21,7 @@
   "dependencies": {
     "@liman/db": "workspace:*",
     "@liman/shared": "workspace:*",
+    "bullmq": "6.7.10",
     "cookie": "2.0.2",
     "drizzle-orm": "0.45.4",
     "express": "5.3.0",

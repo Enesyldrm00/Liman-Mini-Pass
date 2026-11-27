@@ -119,7 +119,6 @@ Ek — Yeni sohbet için bağlam
 - Panelden subdomain değiştirme
 - GitHub'a giden uçlarda (`/api/github/installations/:id/...`) kullanıcı başına hız sınırı (ör. dakikada 60); hatalı bir panel döngüsü kurulumun saatlik GitHub kotasını tüketmesin (0.8 güvenlik denetimi)
 - Webhook tekrar koruması: delivery ID'ye ek olarak `(repo_id, after SHA)` üzerinden idempotency; aynı commit için ikinci push build'i açılmaz (`X-GitHub-Delivery` imzanın kapsamında değil, smee üzerinden tekrar oynatma riski — 0.6 güvenlik denetimi)
-- Clickjacking koruması: Traefik headers middleware ile panel ve API cevaplarına `Content-Security-Policy: frame-ancestors 'none'` ve `X-Frame-Options: DENY`. Kardeş subdomain'deki bir uygulama paneli görünmez iframe'e koyup tıklatabilir; Origin kontrolü bunu durdurmaz. 0.9'da tek düğme "Sign out"; Faz 1'de ilk durum değiştiren düğmeyle (deploy, rollback, silme) birlikte ele alınmalı (0.9 güvenlik denetimi)
 - Geliştirme ortamında Traefik'in 80 portunu `127.0.0.1:80`'e bağlamak; şu an aynı ağdaki biri `Host: liman.localhost` ile Vite dev sunucusuna ve API'ye ulaşabiliyor (0.9 güvenlik denetimi)
 - Bağımlılık ve GitHub Action güncellemelerini otomatik PR'larla getirmek (Dependabot ya da Renovate); şu an SHA'lar ve sürümler elle güncelleniyor (0.10, ADR-0020)
 - Dev bağımlılıkları için ayrı, kırmızıya düşürmeyen bir denetim (`pnpm audit --audit-level critical`); vite ve esbuild panel bundle'ını üretiyor (0.10 güvenlik denetimi)

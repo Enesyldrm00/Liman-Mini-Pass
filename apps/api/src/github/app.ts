@@ -38,6 +38,8 @@ export interface GitHubApp {
     repoFullName: string,
     page: number,
   ): Promise<GitHubPage<Branch>>;
+  /** The branch, or null when the repository has no branch of that name. */
+  getBranch(installationId: number, repoFullName: string, branch: string): Promise<Branch | null>;
 }
 
 /**
@@ -73,9 +75,8 @@ const repoResponseSchema = z.object({
 
 const repoListSchema = z.object({ repositories: z.array(repoResponseSchema) });
 
-const branchListSchema = z.array(
-  z.object({ name: z.string(), commit: z.object({ sha: z.string() }) }),
-);
+const branchResponseSchema = z.object({ name: z.string(), commit: z.object({ sha: z.string() }) });
+const branchListSchema = z.array(branchResponseSchema);
 
 function toRepo(repo: z.infer<typeof repoResponseSchema>): Repo {
   return {
@@ -206,6 +207,21 @@ export function createGitHubApp(options: GitHubAppOptions): GitHubApp {
         items: body.map((branch) => ({ name: branch.name, commitSha: branch.commit.sha })),
         hasNext: hasNextPage(response),
       };
+    },
+
+    async getBranch(installationId, repoFullName, branch) {
+      const response = await get(
+        installationId,
+        "branch",
+        // One segment: a branch name can contain slashes, which are escaped here.
+        `${repoPath(repoFullName)}/branches/${encodeURIComponent(branch)}`,
+      );
+      if (response.status === 404) {
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
+      const body = parse(branchResponseSchema, await readJson(response, "branch", fail), "branch");
+      return { name: body.name, commitSha: body.commit.sha };
     },
   };
 }

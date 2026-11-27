@@ -2,12 +2,13 @@
  * Integration tests for sign-in, sessions, Origin checks and the sign-in rate limit,
  * against real Postgres and Redis (Testcontainers). GitHub is replaced by a fake.
  */
-import { generateKeyPairSync } from "node:crypto";
+import { createSecretKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
 import {
   apps,
   createDb,
+  createEnvCipher,
   githubInstallations,
   runMigrations,
   sessions,
@@ -33,6 +34,7 @@ import type { GitHubApp } from "../github/app.js";
 import { syncInstallations } from "../github/installations.js";
 import { createLogger } from "../logger.js";
 import { apiRoutes } from "./index.js";
+import { unusedPipeline } from "../test/stubs.js";
 
 const PUBLIC_URL = "http://liman.localhost";
 const ALLOWED_ID = 1001;
@@ -127,6 +129,7 @@ const unusedGitHubApp: GitHubApp = {
   listRepos: () => Promise.reject(new Error("not used")),
   findInstalledRepo: () => Promise.reject(new Error("not used")),
   listBranches: () => Promise.reject(new Error("not used")),
+  getBranch: () => Promise.reject(new Error("not used")),
 };
 
 beforeEach(async () => {
@@ -148,8 +151,10 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     logLevel: "silent",
     port: 0,
     publicUrl: PUBLIC_URL,
+    baseDomain: "localhost",
     databaseUrl: "unused",
     redisUrl: "unused",
+    encryptionKey: createSecretKey(randomBytes(32)),
     allowedGithubIds: new Set([String(ALLOWED_ID)]),
     sessionTtlHours: 1,
     github: {
@@ -174,6 +179,8 @@ function makeApp(config: Config = makeConfig()) {
       github: fakeGitHub,
       githubApp: unusedGitHubApp,
       sessions: createSessionStore(dbClient.db, { ttlHours: config.sessionTtlHours }),
+      envCipher: createEnvCipher(config.encryptionKey),
+      pipeline: unusedPipeline,
     }),
   });
 }

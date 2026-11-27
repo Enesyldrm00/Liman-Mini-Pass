@@ -46,7 +46,14 @@ function uniqueById(repos: Repo[]): Repo[] {
   });
 }
 
-export function RepoList({ installationId }: { installationId: string }) {
+export function RepoList({
+  installationId,
+  onSelect,
+}: {
+  installationId: string;
+  /** When given, each repository is a button that picks it (the new-app wizard). */
+  onSelect?: (repo: Repo) => void;
+}) {
   const repos = useInfiniteQuery({
     queryKey: ["repos", installationId],
     queryFn: ({ pageParam }) => fetchRepos(installationId, pageParam),
@@ -98,7 +105,21 @@ export function RepoList({ installationId }: { installationId: string }) {
                 {repo.private ? "Private" : "Public"}
               </span>
             </div>
-            <span className="text-xs text-slate-500">{repo.defaultBranch}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500">{repo.defaultBranch}</span>
+              {onSelect && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelect(repo);
+                  }}
+                  aria-label={`Select ${repo.fullName}`}
+                  className="rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100"
+                >
+                  Select
+                </button>
+              )}
+            </div>
           </li>
         ))}
       </ul>
