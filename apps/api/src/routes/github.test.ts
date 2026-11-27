@@ -3,7 +3,7 @@
  * Postgres and Redis (Testcontainers). The GitHub App client is the real one; only GitHub's
  * HTTP API is faked, and the fake checks the App JWT signature like GitHub would.
  */
-import { generateKeyPairSync, verify } from "node:crypto";
+import { createSecretKey, generateKeyPairSync, randomBytes, verify } from "node:crypto";
 import { Writable } from "node:stream";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
@@ -196,8 +196,10 @@ const config: Config = {
   logLevel: "debug",
   port: 0,
   publicUrl: PUBLIC_URL,
+  baseDomain: "localhost",
   databaseUrl: "unused",
   redisUrl: "unused",
+  encryptionKey: createSecretKey(randomBytes(32)),
   allowedGithubIds: new Set([String(ALLOWED_ID), "2002"]),
   sessionTtlHours: 1,
   github: {

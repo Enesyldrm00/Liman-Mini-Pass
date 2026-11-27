@@ -1,4 +1,6 @@
+import { parseEncryptionKey } from "@liman/db";
 import {
+  base64KeySchema,
   githubIdListSchema,
   intSchema,
   logLevelSchema,
@@ -41,16 +43,36 @@ const privateKeyFileSchema = z.string().transform((path, ctx): KeyObject => {
   return z.NEVER;
 });
 
+/** A bare DNS name such as `localhost` or `apps.example.com`; apps live at `<sub>.<this>`. */
+const baseDomainSchema = z
+  .string()
+  .regex(
+    /^(?=.{1,200}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/,
+    "Must be a lower-case domain name",
+  );
+
+/** AES-256 key for env values (ROADMAP section 7), parsed once at startup. */
+const encryptionKeySchema = base64KeySchema(32).transform((value, ctx): KeyObject => {
+  const key = parseEncryptionKey(value);
+  if (!key) {
+    ctx.addIssue({ code: "custom", message: "Must be base64 encoding exactly 32 bytes" });
+    return z.NEVER;
+  }
+  return key;
+});
+
 // Variables the API needs (ROADMAP section 15). Settings join this schema in the
-// subsection that starts using them; the encryption key comes later.
+// subsection that starts using them.
 const envSchema = z
   .object({
     NODE_ENV: nodeEnvSchema,
     LOG_LEVEL: logLevelSchema.default("info"),
     PORT: portSchema.default(3000),
     LIMAN_PUBLIC_URL: originSchema,
+    LIMAN_BASE_DOMAIN: baseDomainSchema,
     DATABASE_URL: urlSchema(["postgres:", "postgresql:"]),
     REDIS_URL: urlSchema(["redis:", "rediss:"]),
+    LIMAN_ENCRYPTION_KEY: encryptionKeySchema,
     LIMAN_ALLOWED_GITHUB_IDS: githubIdListSchema,
     SESSION_TTL_HOURS: intSchema(1, 8760).default(168),
     GITHUB_APP_CLIENT_ID: z.string(),
@@ -78,8 +100,12 @@ export interface Config {
   readonly port: number;
   /** Panel origin, e.g. `http://liman.localhost`; used for Origin checks and redirects. */
   readonly publicUrl: string;
+  /** Apps are served at `<subdomain>.<baseDomain>`. */
+  readonly baseDomain: string;
   readonly databaseUrl: string;
   readonly redisUrl: string;
+  /** Encrypts env values. Never logged; a KeyObject does not serialise its bytes. */
+  readonly encryptionKey: KeyObject;
   /** GitHub user IDs (decimal strings) allowed to sign in. Logins are never used. */
   readonly allowedGithubIds: ReadonlySet<string>;
   readonly sessionTtlHours: number;
@@ -101,8 +127,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     logLevel: parsed.LOG_LEVEL,
     port: parsed.PORT,
     publicUrl: parsed.LIMAN_PUBLIC_URL,
+    baseDomain: parsed.LIMAN_BASE_DOMAIN,
     databaseUrl: parsed.DATABASE_URL,
     redisUrl: parsed.REDIS_URL,
+    encryptionKey: parsed.LIMAN_ENCRYPTION_KEY,
     allowedGithubIds: new Set(parsed.LIMAN_ALLOWED_GITHUB_IDS),
     sessionTtlHours: parsed.SESSION_TTL_HOURS,
     github: Object.freeze({

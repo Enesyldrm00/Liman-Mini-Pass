@@ -2,7 +2,7 @@
  * Integration tests for sign-in, sessions, Origin checks and the sign-in rate limit,
  * against real Postgres and Redis (Testcontainers). GitHub is replaced by a fake.
  */
-import { generateKeyPairSync } from "node:crypto";
+import { createSecretKey, generateKeyPairSync, randomBytes } from "node:crypto";
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 import { RedisContainer, type StartedRedisContainer } from "@testcontainers/redis";
 import {
@@ -148,8 +148,10 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
     logLevel: "silent",
     port: 0,
     publicUrl: PUBLIC_URL,
+    baseDomain: "localhost",
     databaseUrl: "unused",
     redisUrl: "unused",
+    encryptionKey: createSecretKey(randomBytes(32)),
     allowedGithubIds: new Set([String(ALLOWED_ID)]),
     sessionTtlHours: 1,
     github: {
