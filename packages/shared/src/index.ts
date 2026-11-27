@@ -5,5 +5,6 @@ export * from "./env.js";
 export * from "./errors.js";
 export * from "./github.js";
 export * from "./log-redaction.js";
+export * from "./queue.js";
 export * from "./status.js";
 export * from "./subdomain.js";
