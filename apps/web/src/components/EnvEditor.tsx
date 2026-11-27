@@ -53,11 +53,15 @@ function Editor({
   const [saved, setSaved] = useState(false);
   const save = useMutation({
     mutationFn: (body: Parameters<typeof replaceEnv>[1]) => replaceEnv(appId, body),
+    // The request body holds plaintext values; drop the mutation from the cache at once.
+    gcTime: 0,
     onSuccess: (list) => {
       client.setQueryData(["env", appId], list);
-      // Values are write-only: after saving, the inputs are cleared again.
+      // Values are write-only: after saving, the inputs are cleared again, and so is the
+      // mutation state that still holds them.
       setRows(toRows(list));
       setSaved(true);
+      save.reset();
     },
   });
 
@@ -117,7 +121,13 @@ function Editor({
                   <input
                     aria-label={`Value for ${row.key || `variable ${String(index + 1)}`}`}
                     type="password"
-                    autoComplete="off"
+                    // Not the panel password: keep browsers and password managers from
+                    // offering to save (or fill) env secrets. Chrome ignores "off" here.
+                    autoComplete="new-password"
+                    data-1p-ignore
+                    data-lpignore="true"
+                    data-bwignore
+                    data-form-type="other"
                     value={row.value}
                     placeholder={row.stored ? "•••••• (unchanged)" : "Value"}
                     disabled={disabled}

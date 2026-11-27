@@ -307,13 +307,21 @@ function DetailsForm({
     });
   }
 
-  // Field errors are shown next to the fields; anything else goes above the button.
-  const apiError =
-    create.error instanceof ApiRequestError && create.error.fieldErrors.length === 0
-      ? create.error.message
-      : create.isError && !(create.error instanceof ApiRequestError)
-        ? "Could not create the app."
-        : null;
+  // Errors for the form's own fields are shown next to them. Everything else (the branch
+  // chosen in step 3, a plain message) goes above the button, so no error is ever silent.
+  const apiError = (() => {
+    if (!create.isError) {
+      return null;
+    }
+    if (!(create.error instanceof ApiRequestError)) {
+      return "Could not create the app.";
+    }
+    const elsewhere = create.error.fieldErrors.filter((field) => !(field.path in fields));
+    if (create.error.fieldErrors.length === 0) {
+      return create.error.message;
+    }
+    return elsewhere.length > 0 ? elsewhere.map((field) => field.message).join(" · ") : null;
+  })();
 
   return (
     <form onSubmit={submit} noValidate className="space-y-4">

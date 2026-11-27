@@ -20,12 +20,43 @@ function DeleteApp({ app }: { app: App }) {
       void navigate("/");
     },
   });
+  const retry = useMutation({
+    mutationFn: () => deleteApp(app.id),
+    onSuccess: (updated) => {
+      client.setQueryData(["app", app.id], updated);
+    },
+  });
 
   if (app.status === "deleting") {
     return (
-      <p className="text-sm text-slate-600">
-        This app is being deleted. Its containers and data are removed in the background.
-      </p>
+      <div>
+        <p className="text-sm text-slate-600">
+          This app is being deleted. Its containers and data are removed in the background.
+        </p>
+        {/* DELETE is safe to repeat: it re-queues the cleanup job if it was lost or failed. */}
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              retry.mutate();
+            }}
+            disabled={retry.isPending}
+            className="rounded-md border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+          >
+            {retry.isPending ? "Retrying…" : "Retry cleanup"}
+          </button>
+          {retry.isSuccess && (
+            <span role="status" className="text-sm text-emerald-700">
+              Cleanup queued again
+            </span>
+          )}
+        </div>
+        {retry.isError && (
+          <div className="mt-3">
+            <ErrorMessage>Could not queue the cleanup. Please try again.</ErrorMessage>
+          </div>
+        )}
+      </div>
     );
   }
   return (

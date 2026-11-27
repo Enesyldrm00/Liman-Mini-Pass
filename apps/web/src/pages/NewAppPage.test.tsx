@@ -359,6 +359,26 @@ describe("new app wizard", () => {
     expect(within(details).getByLabelText("Subdomain")).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("shows a field error for a step before the form, such as the branch", async () => {
+    wizardRoutes({
+      "POST /api/apps": {
+        status: 400,
+        body: {
+          error: {
+            code: "validation_failed",
+            message: "Branch not found in the repository",
+            details: [{ path: "branch", message: "Branch not found in the repository" }],
+          },
+        },
+      },
+    });
+    const details = await walkToDetails();
+    await userEvent.click(within(details).getByRole("button", { name: "Create app" }));
+    expect(await within(details).findByRole("alert")).toHaveTextContent(
+      "Branch not found in the repository",
+    );
+  });
+
   it("shows other API errors above the button", async () => {
     wizardRoutes({ "POST /api/apps": apiError(502, "upstream_failed", "GitHub request failed") });
     const details = await walkToDetails();

@@ -70,6 +70,10 @@ describe("env editor", () => {
     expect(value).toHaveValue("");
     expect(value).toHaveAttribute("type", "password");
     expect(value).toHaveAttribute("placeholder", "•••••• (unchanged)");
+    // Not offered to the browser or a password manager as the panel password.
+    expect(value).toHaveAttribute("autocomplete", "new-password");
+    expect(value).toHaveAttribute("data-1p-ignore");
+    expect(value).toHaveAttribute("data-lpignore", "true");
   });
 
   it("sends changed values, keeps untouched ones and drops removed keys", async () => {
@@ -83,7 +87,7 @@ describe("env editor", () => {
         },
       },
     });
-    renderApp(`/apps/${app.id}`);
+    const { client } = renderApp(`/apps/${app.id}`);
     await screen.findByDisplayValue("DATABASE_URL");
 
     await userEvent.click(screen.getByRole("button", { name: "Remove MODE" }));
@@ -96,6 +100,15 @@ describe("env editor", () => {
     expect(bodyOf(mock, "PUT")).toEqual({
       vars: [{ key: "DATABASE_URL" }, { key: "NEW_KEY", value: "s3cret" }],
     });
+    // The plaintext does not linger in the mutation cache either.
+    expect(
+      JSON.stringify(
+        client
+          .getMutationCache()
+          .getAll()
+          .map((m) => m.state),
+      ),
+    ).not.toContain("s3cret");
     // Write-only: the value is gone from the form after saving.
     expect(screen.getByLabelText("Value for NEW_KEY")).toHaveValue("");
     expect(screen.queryByDisplayValue("s3cret")).not.toBeInTheDocument();
@@ -152,6 +165,20 @@ describe("deleting an app", () => {
       await screen.findByRole("heading", { name: "Install the Liman GitHub App" }),
     ).toBeInTheDocument();
     expect(mock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(true);
+  });
+
+  it("offers to retry the cleanup of an app stuck in deleting", async () => {
+    const mock = signedIn({
+      [`GET ${appPath}`]: { body: { ...app, status: "deleting" } },
+      [`DELETE ${appPath}`]: { status: 202, body: { ...app, status: "deleting" } },
+    });
+    renderApp(`/apps/${app.id}`);
+    const danger = await screen.findByRole("region", { name: "Delete" });
+    expect(within(danger).queryByRole("button", { name: "Delete app" })).not.toBeInTheDocument();
+
+    await userEvent.click(within(danger).getByRole("button", { name: "Retry cleanup" }));
+    expect(await within(danger).findByRole("status")).toHaveTextContent("Cleanup queued again");
+    expect(mock.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
   });
 
   it("can be called off", async () => {
