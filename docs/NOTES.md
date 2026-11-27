@@ -6,11 +6,12 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 
 ### 0.1 Monorepo
 
-- pnpm workspace: `apps/api`, `apps/worker`, `apps/web`, `packages/shared` (0.4'te `packages/db` eklendi). Node 26 `.nvmrc` + `engines` + `engine-strict` ile, pnpm `packageManager` ile sabit; bağımlılıklar `^` olmadan tam sürümle yazılıyor. Kurulum betikleri varsayılan olarak kapalı, yalnızca `allowBuilds`'teki esbuild çalışıyor (ADR-0001).
+- pnpm workspace: `apps/api`, `apps/worker`, `apps/web`, `packages/shared` (0.4'te `packages/db` eklendi). Node 26 `.nvmrc` + `engines` + `engineStrict` ile, pnpm `packageManager` ile sabit; bağımlılıklar `^` olmadan tam sürümle yazılıyor. Kurulum betikleri varsayılan olarak kapalı, yalnızca `allowBuilds`'teki esbuild çalışıyor (ADR-0001).
 - TypeScript strict tek bir `tsconfig.base.json`'dan geliyor (`noUncheckedIndexedAccess` dahil). ESLint flat config `strictTypeChecked` kullanıyor ve `any` hata veriyor. Vitest kökte `projects` ile her paketi kendi ortamında çalıştırıyor. Ortak betikler kökte.
 - **Kırılgan noktalar:**
   - `tsbuildinfo` dosyaları ilk commit'lerde yanlışlıkla repoya girdi, 0.2'de `.gitignore`'a eklendi. Yeni bir derleme çıktısı türü eklenirse önce ignore'a bakılmalı.
-  - Sabit sürümleri güncelleyen bir otomasyon yok; açıkları yalnızca CI'daki `pnpm audit` haber veriyor.
+  - Sabit sürümleri güncelleyen bir otomasyon yok. CI'daki `pnpm audit --prod --audit-level high` yalnızca üretim bağımlılıklarındaki high/critical açıkları haber veriyor; dev bağımlılıkları denetlenmiyor.
+  - `engine-strict` 0.1'de `.npmrc`'ye yazılmıştı ama pnpm 12 onu okumuyor: yanlış Node sürümünde kurulum yalnızca uyarı verip devam ediyordu. 0.11'de `pnpm-workspace.yaml`'a `engineStrict` olarak taşındı (elle denendi: önce exit 0, sonra exit 1). pnpm ayarları artık `pnpm-workspace.yaml`'da; `.npmrc` yalnızca kimlik bilgileri içindir.
 
 ### 0.2 Ortak paket
 
@@ -22,12 +23,13 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 
 ### 0.3 Yerel ortam
 
-- `pnpm stack:up` tek komutla postgres, redis, registry, traefik, api, worker, web ve tek seferlik `migrate` servisini ayağa kaldırıyor. api, postgres ve redis sağlıklı olana ve `migrate` başarıyla bitene kadar başlamıyor.
-- İki ağ: `liman-internal` Liman servisleri için, `liman-apps` ileride kullanıcı uygulamaları, Traefik ve worker için. Uygulamalar iç servislere hiç erişemeyecek. Dışarı açık tek port Traefik'in 80'i; postgres (5433), redis, registry ve Traefik paneli yalnızca `127.0.0.1`'e bağlı.
+- `pnpm stack:up` tek komutla postgres, redis, registry, traefik, api, worker, web ve tek seferlik `migrate` servisini ayağa kaldırıyor. api ve worker, postgres ve redis sağlıklı olana ve `migrate` başarıyla bitene kadar başlamıyor.
+- İki ağ: `liman-internal` Liman servisleri için, `liman-apps` ileride kullanıcı uygulamaları, Traefik ve worker için. Uygulamalar `liman-internal`'daki servislere erişemeyecek; Traefik ise iki ağda da (aşağıdaki kırılgan noktaya bakın). Dışarı açık tek port Traefik'in 80'i; postgres (5433), redis, registry ve Traefik paneli host'ta yalnızca `127.0.0.1`'e bağlı.
 - api, worker, web ve migrate aynı geliştirme imajını kullanıyor; bağımlılıklar imajda Linux için kurulu. Kod bind mount yerine `docker compose watch` ile senkronlanıyor, çünkü Windows'ta bind mount dosya değişikliklerini konteynere bildirmiyor. Konteynerler `node` kullanıcısıyla çalışıyor.
 - **Kırılgan noktalar:**
-  - Traefik Docker socket'ini salt okunur bağlıyor; bu bile host üzerinde geniş yetki demek. Faz 1'de worker da socket'e erişecek (ADR-0006).
-  - Yeni bir paket eklenince `dev.Dockerfile`'daki `package.json` kopyalama satırları ve compose `watch` listesi elle güncellenmeli.
+  - Traefik Docker socket'ini `:ro` ile bağlıyor, ama `:ro` Docker API çağrılarını kısıtlamaz: socket'e erişen her süreç host'ta fiilen root'tur. Faz 1'de worker da socket'e erişecek (ADR-0006).
+  - `127.0.0.1:8080` bağlaması yalnızca host'tan erişimi sınırlıyor. Traefik paneli `api.insecure: true` ile konteyner ağında kimlik doğrulamasız açık; Faz 1'de `liman-apps`'e katılan bir uygulama `traefik:8080/api/rawdata`'dan bütün yönlendirme yapılandırmasını okuyabilir. İlk uygulama gelmeden kapatılmalı (park alanında, 0.11 güvenlik denetimi).
+  - Yeni bir paket eklenince `dev.Dockerfile`'daki `package.json` kopyalama satırları ve compose `watch` listesi elle güncellenmeli. 0.4'te db için `watch` satırı unutulmuştu, 0.11'de eklendi.
   - `*.localhost` adını tarayıcılar kendiliğinden çözüyor, Node ve bazı curl sürümleri çözmeyebiliyor; gerekirse hosts dosyası.
 
 ### 0.4 Veritabanı
@@ -113,6 +115,8 @@ Faz özetleri ve mülakat hazırlığı. Alt bölüm notları önce "Taslak notl
 - ADR-0001 (monorepo ve teknoloji seçimi) yazıldı; 0.1–0.3'te verilen ama kayda geçmemiş kararları topluyor: pnpm workspaces, sabit sürümler, `liman-source` koşulu, tek lint/test yapılandırması, Express 5, tek geliştirme imajı ve `compose watch`, iki ağ. ADR-0002, 0003, 0018–0020 zaten alt bölümlerinde yazılmıştı.
 - README iskeleti tamamlandı: CI rozeti, "How it works", faz durumu tablosu, Uygulama Sözleşmesi (Bölüm 3 README'de de olmalı) ve doküman linkleri. Mimari şema, ekran görüntüleri ve ölçümler Faz 1'deki README v1'e kaldı.
 - 0.1–0.3 için eksik olan taslak notlar git geçmişinden ve PR özetlerinden yazıldı. Faz 0 bölümünün derlenmesi `/faz-kapat 0`'a bırakıldı; skill zaten taslakları faz bölümüne işleyip siliyor.
+- İnceleme, dokümanları kodla karşılaştırırken iki gerçek hata buldu ve ikisi de bu dalda düzeltildi: `.npmrc`'deki `engine-strict` pnpm 12'de etkisizdi (artık `pnpm-workspace.yaml`'da `engineStrict`), api'nin `watch` listesinde `packages/db/src` yoktu. Güvenlik denetimi Traefik panelinin konteyner ağında açık olduğunu gösterdi; Faz 1 için park alanına eklendi.
 - **Kırılgan noktalar:**
+  - Geliştirme imajı `.npmrc` olmadan bu oturumda derlenemedi (Docker Desktop kapalıydı) ve CI bu imajı derlemiyor; `pnpm stack:up` ile elle denenmeli.
   - README'deki faz tablosu elle güncelleniyor; faz kapanışlarında unutulmamalı.
   - README'deki Uygulama Sözleşmesi ROADMAP Bölüm 3'ün kopyası; biri değişirse diğeri de değişmeli.
