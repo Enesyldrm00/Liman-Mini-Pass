@@ -408,7 +408,7 @@ Her geçiş tek bir koşullu güncellemedir: durum, ancak beklenen durumdaysa de
 - Bütün uçlar `/api` altındadır. Sağlık ve metrik uçları bunun dışındadır.
 - Gövdeler ve sorgu parametreleri Zod ile doğrulanır.
 - Hata biçimi her yerde aynıdır: `error` nesnesi içinde `code`, `message` ve isteğe bağlı `details`.
-- Durum kodları: 400 doğrulama · 401 oturum yok · 403 sahibi değil / Origin hatalı · 404 · 409 çakışma (subdomain alınmış, iptal edilemez durum) · 429 hız sınırı.
+- Durum kodları: 400 doğrulama · 401 oturum yok · 403 sahibi değil / Origin hatalı · 404 · 409 çakışma (subdomain alınmış, iptal edilemez durum, GitHub kurulumu askıda) · 429 hız sınırı · 502 `upstream_failed` (GitHub hata verdi ya da erişilemedi).
 - Sayfalama imleç (cursor) tabanlıdır.
 
 | Metot | Yol | Açıklama |
