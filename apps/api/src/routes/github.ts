@@ -2,18 +2,23 @@ import { githubInstallations, type Database } from "@liman/db";
 import {
   MAX_CURSOR_PAGE,
   cursorSchema,
-  type ApiError,
   type BranchPage,
-  type ErrorCode,
   type InstallationList,
   type RepoPage,
 } from "@liman/shared";
 import { asc, eq } from "drizzle-orm";
-import { Router, type Request, type Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import type { Config } from "../config/index.js";
-import { GitHubApiError, type GitHubApp, type GitHubPage } from "../github/app.js";
+import type { GitHubApp, GitHubPage } from "../github/app.js";
 import { requireAuth } from "../middleware/session.js";
+import {
+  callGitHub,
+  currentUserId,
+  ownedInstallation,
+  sendError,
+  sendValidation,
+} from "./helpers.js";
 
 export interface GitHubRouteDeps {
   config: Config;
@@ -39,20 +44,6 @@ const repoParamsSchema = z.object({
     .transform(Number),
 });
 const pageQuerySchema = z.object({ cursor: cursorSchema.optional() });
-
-function sendError(res: Response, status: number, code: ErrorCode, message: string): void {
-  const body: ApiError = { error: { code, message } };
-  res.status(status).json(body);
-}
-
-/** The signed-in user; only call after `requireAuth`. */
-function currentUserId(req: Request): string {
-  const id = req.auth?.user.id;
-  if (!id) {
-    throw new Error("requireAuth let an unauthenticated request through");
-  }
-  return id;
-}
 
 /** Never hands out a cursor that `cursorSchema` would reject on the next request. */
 export function toCursorPage<T>(page: GitHubPage<T>, current: number) {
@@ -103,76 +94,14 @@ export function githubRouter(deps: GitHubRouteDeps): Router {
     res.json(body);
   });
 
-  /**
-   * Loads the installation for `:id` and checks the signed-in user owns it. Answers the
-   * request itself and returns null when the caller cannot go on.
-   */
-  async function ownedInstallation(req: Request, res: Response, id: string) {
-    const [row] = await db
-      .select()
-      .from(githubInstallations)
-      .where(eq(githubInstallations.id, id))
-      .limit(1);
-    if (!row) {
-      sendError(res, 404, "not_found", "Installation not found");
-      return null;
-    }
-    if (row.ownerId !== currentUserId(req)) {
-      sendError(res, 403, "forbidden", "Not your installation");
-      return null;
-    }
-    if (row.suspendedAt !== null) {
-      sendError(res, 409, "conflict", "Installation is suspended on GitHub");
-      return null;
-    }
-    return row;
-  }
-
-  /** Runs a GitHub call; GitHub failures become a 404 or 502 answer and null. */
-  async function callGitHub<T>(
-    req: Request,
-    res: Response,
-    call: () => Promise<T>,
-  ): Promise<T | null> {
-    try {
-      return await call();
-    } catch (error) {
-      if (!(error instanceof GitHubApiError)) {
-        throw error;
-      }
-      req.log.warn({ reason: error.reason, status: error.status }, "github api call failed");
-      if (error.reason === "installation_token_http_404") {
-        // Uninstalled on GitHub; the row goes at the next sign-in (webhooks in 1.2).
-        sendError(res, 404, "not_found", "Installation no longer exists on GitHub");
-      } else if (error.reason === "installation_token_http_403") {
-        // Suspended on GitHub since the last sign-in; `suspended_at` catches up then.
-        sendError(res, 409, "conflict", "Installation is suspended on GitHub");
-      } else if (error.reason === "installation_repos_too_many") {
-        sendError(
-          res,
-          409,
-          "conflict",
-          "Installation has too many repositories; select fewer on GitHub",
-        );
-      } else {
-        sendError(res, 502, "upstream_failed", "GitHub request failed");
-      }
-      return null;
-    }
-  }
-
-  function validation(res: Response, message: string): void {
-    sendError(res, 400, "validation_failed", message);
-  }
-
   router.get("/github/installations/:id/repos", async (req, res) => {
     const params = installationParamsSchema.safeParse(req.params);
     const query = pageQuerySchema.safeParse(req.query);
     if (!params.success || !query.success) {
-      validation(res, "Invalid installation ID or cursor");
+      sendValidation(res, "Invalid installation ID or cursor");
       return;
     }
-    const installation = await ownedInstallation(req, res, params.data.id);
+    const installation = await ownedInstallation(db, req, res, params.data.id);
     if (!installation) {
       return;
     }
@@ -190,10 +119,10 @@ export function githubRouter(deps: GitHubRouteDeps): Router {
     const params = repoParamsSchema.safeParse(req.params);
     const query = pageQuerySchema.safeParse(req.query);
     if (!params.success || !query.success) {
-      validation(res, "Invalid installation ID, repository ID or cursor");
+      sendValidation(res, "Invalid installation ID, repository ID or cursor");
       return;
     }
-    const installation = await ownedInstallation(req, res, params.data.id);
+    const installation = await ownedInstallation(db, req, res, params.data.id);
     if (!installation) {
       return;
     }
