@@ -116,6 +116,11 @@ services:
       traefik.enable: "true"
       traefik.http.routers.api.rule: Host(`liman.localhost`) && PathPrefix(`/api`)
       traefik.http.routers.api.entrypoints: web
+      # Clickjacking: an app on a sibling subdomain must not frame the panel or the API and
+      # trick clicks; the Origin check does not stop that (ROADMAP 1.1, park item from 0.9).
+      traefik.http.middlewares.api-no-frames.headers.customFrameOptionsValue: DENY
+      traefik.http.middlewares.api-no-frames.headers.contentSecurityPolicy: "frame-ancestors 'none'"
+      traefik.http.routers.api.middlewares: api-no-frames
       traefik.http.services.api.loadbalancer.server.port: "3000"
     develop:
       watch:
@@ -151,6 +156,11 @@ services:
       traefik.enable: "true"
       traefik.http.routers.web.rule: Host(`liman.localhost`)
       traefik.http.routers.web.entrypoints: web
+      # Clickjacking: an app on a sibling subdomain must not frame the panel or the API and
+      # trick clicks; the Origin check does not stop that (ROADMAP 1.1, park item from 0.9).
+      traefik.http.middlewares.web-no-frames.headers.customFrameOptionsValue: DENY
+      traefik.http.middlewares.web-no-frames.headers.contentSecurityPolicy: "frame-ancestors 'none'"
+      traefik.http.routers.web.middlewares: web-no-frames
       traefik.http.services.web.loadbalancer.server.port: "5173"
     develop:
       watch:
